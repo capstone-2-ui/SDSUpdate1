@@ -14,7 +14,8 @@ function IncidentPage() {
   // State
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [violations, setViolations] = useState([]); // keep if used elsewhere
-  const [typeOptions, setTypeOptions] = useState([]); // options returned by backend for selected type
+  const [violationOptions, setViolationOptions] = useState([]); // options returned by backend for selected violation
+  const [sanctionOptions, setSanctionOptions] = useState([]); // options returned by backend for selected sanction
 
   const [formData, setFormData] = useState({
     type: "",
@@ -133,35 +134,56 @@ function IncidentPage() {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
 
-    // When the user selects the type, fetch the matching options from backend
+    // When the user selects the type, fetch both violations and sanctions from backend
     if (name === "type") {
-      setTypeOptions([]); // clear current options
+      setViolationOptions([]);
+      setSanctionOptions([]);
       if (!value) return;
 
-      // Adjust baseUrl if your backend is served under a different path/port.
+      // Adjust baseUrl if your backend path differs
       const baseUrl = "http://localhost/SDSUpdate1-main/backend/Incident.php";
-      const url = `${baseUrl}?type=${encodeURIComponent(value)}`;
 
-      fetch(url)
+      // fetch both in parallel: we can request both arrays or request the combined object
+      const urlBoth = `${baseUrl}?type=${encodeURIComponent(value)}`;
+
+      fetch(urlBoth)
         .then((res) => res.json())
         .then((data) => {
-          // backend returns array of { id, name }
-          if (Array.isArray(data)) {
-            setTypeOptions(data);
-            // If Minor -> set violation default; if Major -> set sanction default
-            if (value === "Minor") {
-              setFormData((prev) => ({ ...prev, violation: data[0]?.name || "" }));
-            } else if (value === "Major") {
-              setFormData((prev) => ({ ...prev, sanction: data[0]?.name || "" }));
-            }
-          } else {
-            setTypeOptions([]);
+          // If backend returned object { violations: [...], sanctions: [...] }
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            setViolationOptions(Array.isArray(data.violations) ? data.violations : []);
+            setSanctionOptions(Array.isArray(data.sanctions) ? data.sanctions : []);
+            setFormData((prev) => ({
+              ...prev,
+              violation: (data.violations && data.violations[0]?.name) || "",
+              sanction: (data.sanctions && data.sanctions[0]?.name) || "",
+            }));
+            return;
           }
+
+          // If backend returned a single array (compatibility), assume it's violations
+          if (Array.isArray(data)) {
+            setViolationOptions(data);
+            setSanctionOptions([]);
+            setFormData((prev) => ({ ...prev, violation: data[0]?.name || "", sanction: "" }));
+            return;
+          }
+
+          // fallback - keep empty arrays
+          setViolationOptions([]);
+          setSanctionOptions([]);
         })
         .catch((err) => {
           console.error("Failed to load type options:", err);
-          setTypeOptions([]); // keep UI usable
+          setViolationOptions([]);
+          setSanctionOptions([]);
         });
+
+      // (Optional) If you prefer strict per-kind endpoints, you can instead do:
+      // Promise.all([
+      //   fetch(`${baseUrl}?type=${value}&kind=violations`).then(r=>r.json()),
+      //   fetch(`${baseUrl}?type=${value}&kind=sanctions`).then(r=>r.json())
+      // ]).then(([viol, sanc]) => { setViolationOptions(viol); setSanctionOptions(sanc); ... })
     }
   };
 
@@ -363,17 +385,17 @@ function IncidentPage() {
               name="violation"
               value={formData.violation}
               onChange={handleChange}
-              disabled={formData.type !== "Minor"}
+              disabled={!formData.type} // enable when a Type is chosen
             >
               <option value="">Select</option>
 
-              {formData.type === "Minor" && typeOptions.length > 0
-                ? typeOptions.map((opt) => (
+              {violationOptions.length > 0
+                ? violationOptions.map((opt) => (
                     <option key={opt.id} value={opt.name}>
                       {opt.name}
                     </option>
                   ))
-                : formData.type === "Minor" && (
+                : (
                     <>
                       {/* fallback static options if backend returns none */}
                       <option value="No Uniform">No Uniform</option>
@@ -406,17 +428,17 @@ function IncidentPage() {
               name="sanction"
               value={formData.sanction}
               onChange={handleChange}
-              disabled={formData.type !== "Major"}
+              disabled={!formData.type} // enable when a Type is chosen
             >
               <option value="">Select Sanction</option>
 
-              {formData.type === "Major" && typeOptions.length > 0
-                ? typeOptions.map((opt) => (
+              {sanctionOptions.length > 0
+                ? sanctionOptions.map((opt) => (
                     <option key={opt.id} value={opt.name}>
                       {opt.name}
                     </option>
                   ))
-                : formData.type === "Major" && (
+                : (
                     <>
                       {/* fallback static options */}
                       <option value="Oral Warning">Oral Warning</option>

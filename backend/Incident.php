@@ -58,33 +58,45 @@ if ($method === "POST") {
     }
 }
 elseif ($method === "GET") {
-    // Check if requesting violation/sanction options
+    // If client provides ?type=Minor (or Major) we return violations and/or sanctions.
     if (isset($_GET['type'])) {
-        $type = $_GET['type'];
-        $data = [];
+        $type = $conn->real_escape_string($_GET['type']);
+        $kind = $_GET['kind'] ?? ''; // optional: 'violations' or 'sanctions'
+        $response = [];
 
-        // Use fully qualified DB.table names so Incident DB connection can query the other DBs
-        if ($type === 'Minor') {
-            // violations are stored in database `violation_db` table `violations`
-            $sql = "SELECT id, violation AS name FROM violation_db.violations WHERE type='Minor'";
-        } elseif ($type === 'Major') {
-            // sanctions are stored in database `sanction_db` table `sanctions`
-            $sql = "SELECT id, sanction AS name FROM sanction_db.sanctions WHERE type='Major'";
-        } else {
-            echo json_encode([]);
-            exit;
-        }
-
-        $result = $conn->query($sql);
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $data[] = $row;
+        // Fetch violations when requested or when no specific kind provided
+        if ($kind === '' || $kind === 'violations') {
+            $response['violations'] = [];
+            $sql = "SELECT id, violation AS name FROM violation_db.violations WHERE type='" . $type . "'";
+            $result = $conn->query($sql);
+            if ($result) {
+                while ($row = $result->fetch_assoc()) {
+                    $response['violations'][] = $row;
+                }
             }
-        } else {
-            // On query error, return empty array (optionally log)
-            // error_log($conn->error);
         }
-        echo json_encode($data);
+
+        // Fetch sanctions when requested or when no specific kind provided
+        if ($kind === '' || $kind === 'sanctions') {
+            $response['sanctions'] = [];
+            $sql2 = "SELECT id, sanction AS name FROM sanction_db.sanctions WHERE type='" . $type . "'";
+            $result2 = $conn->query($sql2);
+            if ($result2) {
+                while ($row = $result2->fetch_assoc()) {
+                    $response['sanctions'][] = $row;
+                }
+            }
+        }
+
+        // If client asked for a single kind, return that array directly for compatibility
+        if ($kind === 'violations') {
+            echo json_encode($response['violations']);
+        } elseif ($kind === 'sanctions') {
+            echo json_encode($response['sanctions']);
+        } else {
+            echo json_encode($response); // both lists
+        }
+        exit;
     } else {
         // Default: return incidents list
         $result = $conn->query("SELECT * FROM incidents ORDER BY created_at DESC");
