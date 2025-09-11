@@ -3,6 +3,8 @@ import { useLocation } from "react-router-dom";
 import "./IncidentPage.css";
 
 function IncidentPage() {
+  const API_BASE = "http://localhost/SDSUpdate1-main/backend/Incident.php";
+
   // Sample Students
   const [students] = useState([
     { id: "01", name: "John Doe", dept: "BSIT", year: "III", section: "" },
@@ -13,9 +15,9 @@ function IncidentPage() {
 
   // State
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [violations, setViolations] = useState([]); // keep if used elsewhere
-  const [violationOptions, setViolationOptions] = useState([]); // options returned by backend for selected violation
-  const [sanctionOptions, setSanctionOptions] = useState([]); // options returned by backend for selected sanction
+  const [violations, setViolations] = useState([]); // incidents list
+  const [violationOptions, setViolationOptions] = useState([]); // backend violations for selected Type
+  const [sanctionOptions, setSanctionOptions] = useState([]); // backend sanctions for selected Type
 
   const [formData, setFormData] = useState({
     type: "",
@@ -28,54 +30,11 @@ function IncidentPage() {
   // modal: { open, title, content, pos: {left, top} | null, noHeader }
   const [modal, setModal] = useState({ open: false, title: "", content: null, pos: null, noHeader: false });
 
-  // ===========================
-  // ADD: Major Offense Workflow
-  // ===========================
+  // Major workflow tracking (existing)
   const [majorSteps, setMajorSteps] = useState({});
   const [majorData, setMajorData] = useState({});
 
-  // Helper: Open Major modal for a specific step
-  const openMajorModal = (student, stepToOpen, centered = true) => {
-    if (!student) {
-      alert("Select a student first!");
-      return;
-    }
-    setModal({
-      open: true,
-      title: "Major Offense",
-      // MajorOffenseModal includes its own topbar/title, so hide outer header
-      noHeader: true,
-      pos: centered ? null : undefined,
-      content: (
-        <MajorOffenseModal
-          step={stepToOpen}
-          student={student}
-          savedData={(majorData[student.id] || {})[`step${stepToOpen}`]}
-          onSave={(stepNumber, dataObj) => {
-            setMajorData((prev) => {
-              const prevForStudent = prev[student.id] || {};
-              return {
-                ...prev,
-                [student.id]: {
-                  ...prevForStudent,
-                  [`step${stepNumber}`]: dataObj,
-                },
-              };
-            });
-            setMajorSteps((prev) => ({
-              ...prev,
-              [student.id]: Math.max(prev[student.id] || 0, stepNumber),
-            }));
-            setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
-          }}
-          onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
-        />
-      ),
-    });
-  };
-  // ===========================
-  // END ADD
-  // ===========================
+  const exportBtnRef = useRef(null);
 
   // If navigated with a student in location.state, set it as selected
   useEffect(() => {
@@ -83,6 +42,94 @@ function IncidentPage() {
       setSelectedStudent(location.state.student);
     }
   }, [location]);
+
+  // Fetch incidents from backend on mount
+  useEffect(() => {
+    fetchIncidents();
+  }, []);
+
+  const fetchIncidents = async () => {
+    try {
+      const res = await fetch(API_BASE);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setViolations(data);
+      } else if (Array.isArray(data.incidents)) {
+        setViolations(data.incidents);
+      } else {
+        setViolations([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch incidents:", err);
+    }
+  };
+
+  // Create incident (POST)
+  const createIncident = async (payload) => {
+    try {
+      const res = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok && data?.id) {
+        const newItem = { id: data.id, ...payload };
+        setViolations((prev) => [newItem, ...prev]);
+        return { success: true, item: newItem };
+      } else {
+        console.error("Create error:", data);
+        return { success: false, message: data?.message || "Create failed" };
+      }
+    } catch (err) {
+      console.error("Create failed:", err);
+      return { success: false, message: err.message };
+    }
+  };
+
+  // Update incident (PUT)
+  const updateIncident = async (payload) => {
+    try {
+      const res = await fetch(API_BASE, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        setViolations((prev) => prev.map((p) => (String(p.id) === String(payload.id) ? { ...p, ...payload } : p)));
+        return { success: true };
+      } else {
+        console.error("Update error:", data);
+        return { success: false, message: data?.message || "Update failed" };
+      }
+    } catch (err) {
+      console.error("Update failed:", err);
+      return { success: false, message: err.message };
+    }
+  };
+
+  // Delete incident (DELETE)
+  const deleteIncident = async (id) => {
+    try {
+      const res = await fetch(API_BASE, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        setViolations((prev) => prev.filter((v) => String(v.id) !== String(id)));
+        return { success: true };
+      } else {
+        console.error("Delete error:", data);
+        return { success: false, message: data?.message || "Delete failed" };
+      }
+    } catch (err) {
+      console.error("Delete failed:", err);
+      return { success: false, message: err.message };
+    }
+  };
 
   // Bulk Upload
   const handleBulkUpload = (event) => {
@@ -98,7 +145,7 @@ function IncidentPage() {
     const rows = violations.map((v) => [
       v.id,
       v.name,
-      v.department,
+      v.department || v.dept,
       v.year,
       v.section,
       v.violation,
@@ -129,7 +176,7 @@ function IncidentPage() {
     setSelectedStudent(student);
   };
 
-  // Form change
+  // Form change - also fetch options when Type changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -140,11 +187,7 @@ function IncidentPage() {
       setSanctionOptions([]);
       if (!value) return;
 
-      // Adjust baseUrl if your backend path differs
-      const baseUrl = "http://localhost/SDSUpdate1-main/backend/Incident.php";
-
-      // fetch both in parallel: we can request both arrays or request the combined object
-      const urlBoth = `${baseUrl}?type=${encodeURIComponent(value)}`;
+      const urlBoth = `${API_BASE}?type=${encodeURIComponent(value)}`;
 
       fetch(urlBoth)
         .then((res) => res.json())
@@ -178,94 +221,133 @@ function IncidentPage() {
           setViolationOptions([]);
           setSanctionOptions([]);
         });
-
-      // (Optional) If you prefer strict per-kind endpoints, you can instead do:
-      // Promise.all([
-      //   fetch(`${baseUrl}?type=${value}&kind=violations`).then(r=>r.json()),
-      //   fetch(`${baseUrl}?type=${value}&kind=sanctions`).then(r=>r.json())
-      // ]).then(([viol, sanc]) => { setViolationOptions(viol); setSanctionOptions(sanc); ... })
     }
   };
 
-  // Add violation
-  const handleAddViolation = () => {
+  // Add violation - persist to backend
+  const handleAddViolation = async () => {
     if (!selectedStudent) {
       alert("Select a student first!");
       return;
     }
 
-    const newViolation = {
-      ...selectedStudent,
-      ...formData,
+    const payload = {
+      student_id: selectedStudent.id,
+      name: selectedStudent.name,
+      department: selectedStudent.department || selectedStudent.dept || "",
+      year: selectedStudent.year,
+      section: selectedStudent.section,
+      type: formData.type,
+      offense: formData.offense,
+      violation: formData.violation,
+      sanction: formData.sanction,
     };
 
-    setViolations((prev) => [...prev, newViolation]);
-
-    // reset dropdowns only
-    setFormData({ type: "", sanction: "", violation: "", offense: "1st" });
+    const result = await createIncident(payload);
+    if (result.success) {
+      setFormData({ type: "", sanction: "", violation: "", offense: "1st" });
+      setSelectedStudent(null);
+    } else {
+      alert("Failed to save incident: " + (result.message || "unknown"));
+    }
   };
 
   // Action Menu Handler (used when a menu item is clicked inside the popover)
   const handleMenuAction = (action, student) => {
-    let content;
-
+    // student here is the incident row object
     switch (action) {
-      case "View Student Profile":
-        content = (
+      case "View Student Profile": {
+        const content = (
           <div className="modal-inner-content">
             <h3>{student.name}</h3>
-            <p><b>ID:</b> {student.id}</p>
-            <p><b>Department:</b> {student.dept}</p>
+            <p><b>ID:</b> {student.student_id ?? student.id}</p>
+            <p><b>Department:</b> {student.department || student.dept}</p>
             <p><b>Year:</b> {student.year}</p>
             <p><b>Section:</b> {student.section}</p>
             <p><b>Violation:</b> {student.violation}</p>
           </div>
         );
+        setModal({ open: true, title: action, content, pos: null, noHeader: false });
         break;
-      case "Edit Student Profile":
-        content = (
-          <div className="modal-inner-content">
-            <label>Name:</label>
-            <input type="text" defaultValue={student.name} />
-            <label>Dept:</label>
-            <input type="text" defaultValue={student.dept} />
-            <label>Year:</label>
-            <input type="text" defaultValue={student.year} />
-            <label>Section:</label>
-            <input type="text" defaultValue={student.section} />
-            <label>Violation:</label>
-            <input type="text" defaultValue={student.violation} />
-          </div>
-        );
+      }
+
+      case "Edit Violation": {
+        const initial = {
+          id: student.id,
+          student_id: student.student_id || student.studentId || student.id,
+          name: student.name,
+          department: student.department || student.dept || "",
+          year: student.year || "",
+          section: student.section || "",
+          type: student.type || "",
+          offense: student.offense || "1st",
+          violation: student.violation || "",
+          sanction: student.sanction || "",
+        };
+
+        setModal({
+          open: true,
+          title: "Edit Violation",
+          pos: null,
+          noHeader: false,
+          content: (
+            <EditIncidentForm
+              initial={initial}
+              onSave={async (updated) => {
+                const res = await updateIncident(updated);
+                if (res.success) setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                else alert("Update failed: " + (res.message || ""));
+              }}
+              onCancel={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+            />
+          ),
+        });
         break;
-      case "Edit Violation":
-        content = (
-          <div className="modal-inner-content">
-            <label>Violation:</label>
-            <input type="text" defaultValue={student.violation} />
-            <label>Sanction:</label>
-            <input type="text" defaultValue={student.sanction} />
-          </div>
-        );
+      }
+
+      case "Delete": {
+        setModal({
+          open: true,
+          title: "Confirm Delete",
+          pos: null,
+          noHeader: false,
+          content: (
+            <div style={{ padding: 12 }}>
+              <p>Delete incident for <strong>{student.name}</strong> (ID: {student.id})?</p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={async () => {
+                  const res = await deleteIncident(student.id);
+                  if (res.success) setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                  else alert("Delete failed: " + (res.message || ""));
+                }}>Delete</button>
+                <button onClick={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}>Cancel</button>
+              </div>
+            </div>
+          ),
+        });
         break;
-      case "Process":
-        {
-          // use MajorOffenseModal; hide the redundant outer header
-          const lastSaved = majorSteps[student.id] || 0;
-          if ((student.type || student.violation || "").toLowerCase() !== "major" && (formData.type !== "Major")) {
-            // If the row doesn't explicitly carry "Major", still allow using tracker
-            // but only if tracker exists; otherwise, hint
-            if (!lastSaved) {
-              content = <p>Please set the violation type to <b>Major</b> first to start the process.</p>;
-              break;
-            }
-          }
-          if (lastSaved >= 5) {
-            content = <p>All steps are already completed for {student.name}.</p>;
+      }
+
+      case "Process": {
+        // use MajorOffenseModal; hide the redundant outer header
+        const lastSaved = majorSteps[student.id] || 0;
+        if ((student.type || student.violation || "").toLowerCase() !== "major" && (formData.type !== "Major")) {
+          if (!lastSaved) {
+            setModal({ open: true, title: action, content: <p>Please set the violation type to <b>Major</b> first to start the process.</p>, pos: null, noHeader: false });
             break;
           }
-          const nextStep = Math.min(lastSaved + 1, 5);
-          content = (
+        }
+        if (lastSaved >= 5) {
+          setModal({ open: true, title: action, content: <p>All steps are already completed for {student.name}.</p>, pos: null, noHeader: false });
+          break;
+        }
+        const nextStep = Math.min(lastSaved + 1, 5);
+        setModal({
+          open: true,
+          title: action,
+          pos: null,
+          noHeader: true,
+          content: (
             <MajorOffenseModal
               step={nextStep}
               student={student}
@@ -289,36 +371,34 @@ function IncidentPage() {
               }}
               onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
             />
-          );
-        }
+          ),
+        });
         break;
-      case "Send Notification":
-        content = <p>Notification sent to {student.name}'s email/parent.</p>;
+      }
+
+      case "Send Notification": {
+        setModal({ open: true, title: action, content: <p>Notification sent to {student.name}'s email/parent.</p>, pos: null, noHeader: false });
         break;
+      }
+
       default:
-        content = <p>Unknown action</p>;
+        setModal({ open: true, title: action, content: <p>Unknown action</p>, pos: null, noHeader: false });
     }
 
-    // If it's the "Process" modal (MajorOffenseModal) we hide outer header; otherwise show header.
-    const hideOuterHeader = action === "Process";
-    setModal({ open: true, title: action, content, pos: null, noHeader: hideOuterHeader });
     setMenuOpenIndex(null);
   };
 
-  // search state (functional search bar)
+  // search state
   const [searchQuery, setSearchQuery] = useState("");
 
-  // ref for export button (anchor for filter popover)
-  const exportBtnRef = useRef(null);
-
-  // derived filtered list (matches id, name, department, year, section, violation)
+  // derived filtered list
   const filteredViolations = violations.filter((v) => {
     const q = (searchQuery || "").trim().toLowerCase();
     if (!q) return true;
     return (
-      (v.id || "").toLowerCase().includes(q) ||
+      (String(v.id || "")).toLowerCase().includes(q) ||
       (v.name || "").toLowerCase().includes(q) ||
-      (v.department || "").toLowerCase().includes(q) ||
+      (v.department || v.dept || "").toLowerCase().includes(q) ||
       (v.year || "").toLowerCase().includes(q) ||
       (v.section || "").toLowerCase().includes(q) ||
       (v.violation || "").toLowerCase().includes(q)
@@ -376,7 +456,7 @@ function IncidentPage() {
             >
               <option value="1st">1st</option>
               <option value="2nd">2nd</option>
-              <option value="3rd">Major</option>
+              <option value="3rd">3rd</option>
             </select>
           </div>
           <div>
@@ -385,10 +465,9 @@ function IncidentPage() {
               name="violation"
               value={formData.violation}
               onChange={handleChange}
-              disabled={!formData.type} // enable when a Type is chosen
+              disabled={!formData.type}
             >
               <option value="">Select</option>
-
               {violationOptions.length > 0
                 ? violationOptions.map((opt) => (
                     <option key={opt.id} value={opt.name}>
@@ -397,7 +476,6 @@ function IncidentPage() {
                   ))
                 : (
                     <>
-                      {/* fallback static options if backend returns none */}
                       <option value="No Uniform">No Uniform</option>
                       <option value="Cheating">Cheating</option>
                       <option value="Disrespect">Disrespect</option>
@@ -407,7 +485,7 @@ function IncidentPage() {
           </div>
           <div>
             <label>Department</label>
-            <input type="text" value={selectedStudent?.department || ""} readOnly />
+            <input type="text" value={selectedStudent?.department || selectedStudent?.dept || ""} readOnly />
           </div>
           <div>
             <label>Section</label>
@@ -428,10 +506,9 @@ function IncidentPage() {
               name="sanction"
               value={formData.sanction}
               onChange={handleChange}
-              disabled={!formData.type} // enable when a Type is chosen
+              disabled={!formData.type}
             >
               <option value="">Select Sanction</option>
-
               {sanctionOptions.length > 0
                 ? sanctionOptions.map((opt) => (
                     <option key={opt.id} value={opt.name}>
@@ -440,7 +517,6 @@ function IncidentPage() {
                   ))
                 : (
                     <>
-                      {/* fallback static options */}
                       <option value="Oral Warning">Oral Warning</option>
                       <option value="Written Warning">Written Warning</option>
                       <option value="Suspension">Suspension</option>
@@ -513,33 +589,28 @@ function IncidentPage() {
               }
 
               const rect = anchor.getBoundingClientRect();
-              const popoverWidth = 360;   // CSS width for .filter-popover
-              const popoverHeight = 420;  // approximate height; popover is scrollable if smaller viewport
+              const popoverWidth = 360;
+              const popoverHeight = 420;
 
               const vw = window.innerWidth;
               const vh = window.innerHeight;
               const scrollX = window.scrollX || window.pageXOffset;
               const scrollY = window.scrollY || window.pageYOffset;
 
-              // try positioning above the button, right-aligned with anchor's right edge
               let left = rect.right - popoverWidth + scrollX;
               let top = rect.top + scrollY - popoverHeight - 8;
 
-              // if not enough space above, position below the button
               if (top < 8) {
                 top = rect.bottom + scrollY + 8;
               }
 
-              // ensure the popover stays within viewport horizontally
               if (left < 8 + scrollX) {
-                // try aligning with anchor left if right-aligned would overflow
                 left = rect.left + scrollX;
               }
               if (left + popoverWidth > vw - 8 + scrollX) {
                 left = Math.max(8 + scrollX, vw - popoverWidth - 8 + scrollX);
               }
 
-              // ensure the popover stays within viewport vertically (reduce top if it overflows)
               if (top + popoverHeight > vh - 8 + scrollY) {
                 top = Math.max(8 + scrollY, vh - popoverHeight - 8 + scrollY);
               }
@@ -584,7 +655,7 @@ function IncidentPage() {
             <tr key={index}>
               <td>{v.id}</td>
               <td>{v.name}</td>
-              <td>{v.department}</td>
+              <td>{v.department || v.dept}</td>
               <td>{v.year}</td>
               <td>{v.section}</td>
               <td>{v.violation}</td>
@@ -592,7 +663,6 @@ function IncidentPage() {
                 <button
                   className="menu-btn"
                   onClick={(e) => {
-                    // position popover under the clicked button
                     const rect = e.currentTarget.getBoundingClientRect();
                     setModal({
                       open: true,
@@ -604,9 +674,6 @@ function IncidentPage() {
                           <button onClick={() => handleMenuAction("View Student Profile", v)}>
                             View Student Profile
                           </button>
-                          <button onClick={() => handleMenuAction("Edit Student Profile", v)}>
-                            Edit Student Profile
-                          </button>
                           <button onClick={() => handleMenuAction("Edit Violation", v)}>
                             Edit Violation
                           </button>
@@ -615,6 +682,9 @@ function IncidentPage() {
                           </button>
                           <button onClick={() => handleMenuAction("Send Notification", v)}>
                             Send Notification
+                          </button>
+                          <button onClick={() => handleMenuAction("Delete", v)}>
+                            Delete
                           </button>
                         </div>
                       ),
@@ -634,7 +704,6 @@ function IncidentPage() {
         <div
           className="modal-overlay"
           onMouseDown={(e) => {
-            // close when clicking overlay (but not when clicking modal content)
             if (e.target === e.currentTarget) setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
           }}
         >
@@ -642,7 +711,6 @@ function IncidentPage() {
             className={`modal-content ${modal.pos ? "popover" : ""}`}
             style={modal.pos ? { left: modal.pos.left + "px", top: modal.pos.top + "px" } : {}}
           >
-            {/* Only show outer title/close for regular (non-MajorOffense) modals */}
             {!modal.noHeader && modal.title && <h2 className="modal-title">{modal.title}</h2>}
 
             {modal.content}
@@ -667,13 +735,51 @@ function IncidentPage() {
 export default IncidentPage;
 
 /* ===========================
-   ADD: MajorOffenseModal component
+   EditIncidentForm component (for updating incidents)
+   =========================== */
+function EditIncidentForm({ initial, onSave, onCancel }) {
+  const [local, setLocal] = useState({ ...initial });
+
+  useEffect(() => {
+    setLocal({ ...initial });
+  }, [initial]);
+
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ display: "grid", gap: 8 }}>
+        <label>
+          Type
+          <select value={local.type} onChange={(e) => setLocal((p) => ({ ...p, type: e.target.value }))}>
+            <option value="">Select</option>
+            <option value="Minor">Minor</option>
+            <option value="Major">Major</option>
+          </select>
+        </label>
+
+        <label>
+          Violation
+          <input type="text" value={local.violation || ""} onChange={(e) => setLocal((p) => ({ ...p, violation: e.target.value }))} />
+        </label>
+
+        <label>
+          Sanction
+          <input type="text" value={local.sanction || ""} onChange={(e) => setLocal((p) => ({ ...p, sanction: e.target.value }))} />
+        </label>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => onSave(local)}>Save</button>
+          <button onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   MajorOffenseModal component (unchanged from earlier)
    =========================== */
 function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
-  // Local form states for each step; initialize from savedData if available
-  const [step1, setStep1] = useState({
-    incidentReport: savedData?.incidentReport || "",
-  });
+  const [step1, setStep1] = useState({ incidentReport: savedData?.incidentReport || "" });
   const [step2, setStep2] = useState({
     chairDean: savedData?.chairDean || "",
     facultyMember: savedData?.facultyMember || "",
@@ -688,12 +794,8 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
     witnessTestimonies: !!savedData?.witnessTestimonies,
     finalStatements: !!savedData?.finalStatements,
   });
-  const [step4, setStep4] = useState({
-    sanction: savedData?.sanction || "",
-  });
-  const [step5, setStep5] = useState({
-    decisionApproval: savedData?.decisionApproval || "",
-  });
+  const [step4, setStep4] = useState({ sanction: savedData?.sanction || "" });
+  const [step5, setStep5] = useState({ decisionApproval: savedData?.decisionApproval || "" });
 
   const renderProgress = (activeIndex) => {
     const dots = [1, 2, 3, 4, 5];
@@ -732,15 +834,10 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
 
         {renderProgress(step)}
 
-        {/* Step 1 */}
         {step === 1 && (
           <div className="major-modal-step">
             <label>Incident Report</label>
-            <textarea
-              placeholder="Write incident report..."
-              value={step1.incidentReport}
-              onChange={(e) => setStep1({ incidentReport: e.target.value })}
-            />
+            <textarea placeholder="Write incident report..." value={step1.incidentReport} onChange={(e) => setStep1({ incidentReport: e.target.value })} />
             <div className="major-modal-actions">
               <button className="btn-back" onClick={onClose}>Back</button>
               <button className="btn-primary" onClick={saveCurrent}>Save</button>
@@ -748,7 +845,6 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
           </div>
         )}
 
-        {/* Step 2 */}
         {step === 2 && (
           <div className="major-modal-step">
             <div className="major-modal-committee">
@@ -781,7 +877,6 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
           </div>
         )}
 
-        {/* Step 3 */}
         {step === 3 && (
           <div className="major-modal-step">
             <div className="major-modal-checkboxes">
@@ -799,7 +894,6 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
           </div>
         )}
 
-        {/* Step 4 */}
         {step === 4 && (
           <div className="major-modal-step">
             <label>Choose a Sanction</label>
@@ -820,7 +914,6 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
           </div>
         )}
 
-        {/* Step 5 */}
         {step === 5 && (
           <div className="major-modal-step">
             <label>Decision Approval</label>
@@ -841,7 +934,7 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
   );
 }
 
-/* Add FilterPopover component (placed after MajorOffenseModal or at file bottom) */
+/* Add FilterPopover component */
 function FilterPopover({ onApply, onClose }) {
   const [alphaAZ, setAlphaAZ] = useState(false);
   const [alphaZA, setAlphaZA] = useState(false);
