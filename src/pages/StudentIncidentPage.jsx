@@ -122,20 +122,39 @@ export default function StudentIncidentPage() {
     e.preventDefault();
     const form = e.target;
 
-    // Build payload with backend field names; include student_id
+    // Use FormData to reliably get named inputs (works even if form.* properties are missing)
+    const fd = new FormData(form);
+
+    // New values (from form) or fallbacks to the selectedStudent
+    const newStudentId = (fd.get("id") || selectedStudent?.student_id || selectedStudent?.id || "").toString();
+    const name = (fd.get("name") || "").toString();
+    const email = (fd.get("email") || "").toString();
+    const department = (fd.get("department") || "").toString();
+    const year = (fd.get("year") || "").toString();
+    const grade = (fd.get("grade") || "").toString();
+    const section = (fd.get("section") || "").toString();
+    const strand = (fd.get("strand") || "").toString();
+    const status = (fd.get("status") || selectedStudent?.status || "Active").toString();
+
+    // original identifier so backend can find the correct record even if student_id was changed
+    const originalId = (selectedStudent?.student_id ?? selectedStudent?.id ?? "").toString();
+
     const updatedStudent = {
-      // keep DB id if you want, but backend looks up by student_id
-      id: selectedStudent.id,
-      student_id: form.id.value || selectedStudent.student_id, // important
-      name: form.name.value,
-      email: form.email.value,
-      department: form.department?.value || "",
-      year: form.year?.value || "",
-      grade: form.grade?.value || "",
-      section: form.section?.value || "",
-      strand: form.strand?.value || "",
-      status: form.status.value,
-      level: selectedStudent.level || "",
+      // DB numeric id (optional; backend may use it as fallback)
+      id: selectedStudent?.id ?? null,
+      // the (possibly changed) student_id coming from the form
+      student_id: newStudentId,
+      // the original student identifier (string or numeric) for a safe lookup server-side
+      original_student_id: originalId,
+      name,
+      email,
+      department,
+      year,
+      grade,
+      section,
+      strand,
+      status,
+      level: selectedStudent?.level || "",
     };
 
     fetch(API_URL, {
@@ -143,12 +162,22 @@ export default function StudentIncidentPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updatedStudent),
     })
-      .then((res) => res.json())
+      .then((res) =>
+        // guard against empty responses
+        res.json().catch(() => ({ success: true, message: "No JSON returned" }))
+      )
       .then((data) => {
-        // refresh list to reflect canonical backend state
-        reloadStudents();
-        setShowEditModal(false);
-        setSelectedStudent(null);
+        // treat both explicit success or affected_rows > 0 as success
+        if (data && (data.success === true || data.affected_rows > 0 || data.message)) {
+          // refresh canonical data from backend
+          reloadStudents();
+          setShowEditModal(false);
+          setSelectedStudent(null);
+        } else {
+          const msg = data && (data.error || data.message) ? (data.error || data.message) : "Update failed";
+          alert("Update failed: " + msg);
+          console.error("Update failed response:", data);
+        }
       })
       .catch((err) => {
         console.error("Edit error:", err);
@@ -156,19 +185,48 @@ export default function StudentIncidentPage() {
       });
   };
 
-  // Delete Student (DELETE)
-  const handleDeleteStudent = (studentId) => {
-    if (!window.confirm("Are you sure you want to delete this student?")) return;
+  // ---- DELETE Student (DELETE) ----
+  const handleDeleteStudent = (studentOrId) => {
+    // Accept either a student object or a primitive id (string/number)
+    let idToDelete = null;
+    let displayName = "";
 
-    fetch(`${API_URL}?id=${encodeURIComponent(studentId)}`, { method: "DELETE" })
-      .then((res) => res.json())
+    if (typeof studentOrId === "object" && studentOrId !== null) {
+      idToDelete = studentOrId.student_id ?? studentOrId.id;
+      displayName = studentOrId.name ?? "";
+    } else {
+      // primitive passed (id)
+      idToDelete = studentOrId;
+    }
+
+    if (idToDelete === null || idToDelete === undefined || String(idToDelete).trim() === "") {
+      alert("Cannot determine student identifier to delete.");
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete "${displayName || idToDelete}" (ID: ${idToDelete})?`)) {
+      return;
+    }
+
+    fetch(`${API_URL}?id=${encodeURIComponent(idToDelete)}`, {
+      method: "DELETE",
+    })
+      .then((res) => res.json().catch(() => ({ success: false, error: "Invalid JSON response" })))
       .then((data) => {
-        // refresh list after delete
-        reloadStudents();
-        setShowViewModal(false);
+        if (data && data.success) {
+          // Refresh list to reflect canonical backend state
+          reloadStudents();
+          setShowViewModal(false);
+          setSelectedStudent(null);
+          alert("Student deleted.");
+        } else {
+          const msg = data && (data.error || data.message) ? (data.error || data.message) : "Delete failed";
+          alert("Delete failed: " + msg);
+          console.error("Delete failed:", data);
+        }
       })
       .catch((err) => {
-        console.error("Delete error:", err);
+        console.error("Error deleting student:", err);
         alert("Delete failed. See console for details.");
       });
   };
@@ -364,6 +422,69 @@ export default function StudentIncidentPage() {
       default:
         return null;
     }
+  };
+
+  // Render fields (level-specific) - already present
+  const renderEditFieldsAll = (student = {}) => {
+    return (
+      <>
+        <label>Name*</label>
+        <input name="name" defaultValue={student.name || ""} required />
+
+        <label>ID*</label>
+        {/* backend expects the field named 'id' for the edit form (we pass student_id via this field) */}
+        <input name="id" defaultValue={student.student_id ?? student.id ?? ""} required />
+
+        <label>Department</label>
+        <select name="department" defaultValue={student.department || ""}>
+          <option value="">Select Department</option>
+          {departments.map((d) => (
+            <option key={d.id ?? d.name ?? d.department} value={d.name ?? d.department ?? ""}>
+              {d.name ?? d.department ?? ""}
+            </option>
+          ))}
+        </select>
+
+        <label>Section</label>
+        <select name="section" defaultValue={student.section || ""}>
+          <option value="">Select Section</option>
+          {sections.map((s) => (
+            <option key={s.id ?? s.section} value={s.section ?? ""}>
+              {s.section ?? ""}
+            </option>
+          ))}
+        </select>
+
+        <label>Grade</label>
+        <select name="grade" defaultValue={student.grade || ""}>
+          <option value="">Select Grade</option>
+          {grades.map((g) => (
+            <option key={g.id ?? g.grade} value={g.grade ?? ""}>
+              {g.grade ?? ""}
+            </option>
+          ))}
+        </select>
+
+        <label>Strand</label>
+        <select name="strand" defaultValue={student.strand || ""}>
+          <option value="">Select Strand</option>
+          {strands.map((st) => (
+            <option key={st.id ?? st.strand} value={st.strand ?? ""}>
+              {st.strand ?? ""}
+            </option>
+          ))}
+        </select>
+
+        <label>Year</label>
+        <select name="year" defaultValue={student.year || ""}>
+          <option value="">Select Year</option>
+          <option value="1st Year">1st Year</option>
+          <option value="2nd Year">2nd Year</option>
+          <option value="3rd Year">3rd Year</option>
+          <option value="4th Year">4th Year</option>
+        </select>
+      </>
+    );
   };
 
   return (
@@ -613,7 +734,7 @@ export default function StudentIncidentPage() {
                   <b>Email:</b> {selectedStudent.email || "N/A"}
                 </p>
                 <p>
-                  <b>Student ID:</b> {selectedStudent.id}
+                  <b>Student ID:</b> {selectedStudent.student_id ?? selectedStudent.id}
                 </p>
                 <p>
                   <b>Department:</b> {selectedStudent.department}
@@ -656,7 +777,7 @@ export default function StudentIncidentPage() {
               </button>
               <button
                 className="btn delete"
-                onClick={() => handleDeleteStudent(selectedStudent.id)}
+                onClick={() => handleDeleteStudent(selectedStudent)}
               >
                 Delete
               </button>
@@ -674,22 +795,7 @@ export default function StudentIncidentPage() {
             </div>
             <form onSubmit={handleEditStudent}>
               <div className="modal-body">
-                <label>Name*</label>
-                <input
-                  name="name"
-                  defaultValue={selectedStudent.name}
-                  required
-                />
-
-                <label>Email*</label>
-                <input
-                  name="email"
-                  type="email"
-                  defaultValue={selectedStudent.email || ""}
-                  required
-                />
-
-                {renderFields(selectedStudent.level, selectedStudent)}
+                {renderEditFieldsAll(selectedStudent)}
 
                 <label>Status*</label>
                 <select

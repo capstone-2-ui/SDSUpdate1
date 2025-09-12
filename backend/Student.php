@@ -2,7 +2,8 @@
 // backend/Student.php
 
 // Allow CORS (for React frontend)
-header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Origin: http://localhost:3000");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json; charset=UTF-8");
@@ -117,24 +118,93 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
 elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     $data = getJsonInput();
 
-    $stmt = $conn->prepare("UPDATE students 
-                            SET name=?, email=?, department=?, year=?, grade=?, section=?, strand=?, status=? 
-                            WHERE student_id=?");
-    $stmt->bind_param(
-        "sssssssss",
-        $data['name'],
-        $data['email'],
-        $data['department'],
-        $data['year'],
-        $data['grade'],
-        $data['section'],
-        $data['strand'],
-        $data['status'],
-        $data['student_id']
-    );
+    // Normalize incoming fields with safe defaults
+    $name   = isset($data['name']) ? $data['name'] : "";
+    $email  = isset($data['email']) ? $data['email'] : "";
+    $department = isset($data['department']) ? $data['department'] : "";
+    $year   = isset($data['year']) ? $data['year'] : "";
+    $grade  = isset($data['grade']) ? $data['grade'] : "";
+    $section = isset($data['section']) ? $data['section'] : "";
+    $strand = isset($data['strand']) ? $data['strand'] : "";
+    $status = isset($data['status']) ? $data['status'] : "Active";
+    $new_student_id = isset($data['student_id']) ? $data['student_id'] : null;
+    $orig_student_id = isset($data['original_student_id']) ? $data['original_student_id'] : null;
+    $numeric_id = isset($data['id']) ? intval($data['id']) : null;
+
+    // Prefer original_student_id (string) to locate the record, then numeric id, then new_student_id fallback.
+    if (!empty($orig_student_id)) {
+        // Update by original student_id; allow changing student_id to new_student_id
+        $stmt = $conn->prepare("UPDATE students
+                                SET name=?, email=?, department=?, year=?, grade=?, section=?, strand=?, status=?, student_id=?
+                                WHERE student_id=?");
+        if (!$stmt) {
+            echo json_encode(["success" => false, "error" => "Prepare failed (update by original_student_id): " . $conn->error]);
+            exit;
+        }
+        $stmt->bind_param(
+            "ssssssssss",
+            $name,
+            $email,
+            $department,
+            $year,
+            $grade,
+            $section,
+            $strand,
+            $status,
+            $new_student_id,
+            $orig_student_id
+        );
+    } elseif (!empty($numeric_id)) {
+        // Update by numeric DB id
+        $stmt = $conn->prepare("UPDATE students
+                                SET name=?, email=?, department=?, year=?, grade=?, section=?, strand=?, status=?, student_id=?
+                                WHERE id=?");
+        if (!$stmt) {
+            echo json_encode(["success" => false, "error" => "Prepare failed (update by id): " . $conn->error]);
+            exit;
+        }
+        $stmt->bind_param(
+            "ssssssssis",
+            $name,
+            $email,
+            $department,
+            $year,
+            $grade,
+            $section,
+            $strand,
+            $status,
+            $new_student_id,
+            $numeric_id
+        );
+    } elseif (!empty($new_student_id)) {
+        // Fallback: update where student_id == new_student_id (i.e., no change to id)
+        $stmt = $conn->prepare("UPDATE students
+                                SET name=?, email=?, department=?, year=?, grade=?, section=?, strand=?, status=?
+                                WHERE student_id=?");
+        if (!$stmt) {
+            echo json_encode(["success" => false, "error" => "Prepare failed (update by student_id fallback): " . $conn->error]);
+            exit;
+        }
+        $stmt->bind_param(
+            "sssssssss",
+            $name,
+            $email,
+            $department,
+            $year,
+            $grade,
+            $section,
+            $strand,
+            $status,
+            $new_student_id
+        );
+    } else {
+        echo json_encode(["success" => false, "error" => "No identifier supplied for update. Provide original_student_id or id or student_id."]);
+        exit;
+    }
 
     if ($stmt->execute()) {
-        echo json_encode(["success" => true, "message" => "Student updated"]);
+        // Optionally, you can return affected_rows for frontend checks
+        echo json_encode(["success" => true, "message" => "Student updated", "affected_rows" => $stmt->affected_rows]);
     } else {
         echo json_encode(["success" => false, "error" => $stmt->error]);
     }
@@ -148,21 +218,57 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         exit;
     }
 
-    $id = $_GET['id'];
-    $stmt = $conn->prepare("DELETE FROM students WHERE student_id=?");
-    $stmt->bind_param("s", $id);
+    $rawId = $_GET['id'];
+    $id = trim((string)$rawId);
 
-    if ($stmt->execute()) {
-    $insertedId = $conn->insert_id; // last auto id
-    $result = $conn->query("SELECT * FROM students WHERE id = $insertedId");
-    $newStudent = $result->fetch_assoc();
+    if ($id === '') {
+        echo json_encode(["success" => false, "error" => "Empty student ID"]);
+        exit;
+    }
 
-    echo json_encode(["success" => true, "student" => $newStudent]);
-} else {
-    echo json_encode(["success" => false, "error" => $stmt->error]);
-}
+    // Try deleting by student_id (string). This will harmlessly affect 0 rows
+    $delBySid = $conn->prepare("DELETE FROM students WHERE student_id = ?");
+    if ($delBySid) {
+        $delBySid->bind_param("s", $id);
+        $delBySid->execute();
+        if ($delBySid->affected_rows > 0) {
+            echo json_encode(["success" => true, "message" => "Student deleted by student_id"]);
+            $delBySid->close();
+            exit;
+        }
+        $delBySid->close();
+    } else {
+        // prepare failed — report error (rare)
+        echo json_encode(["success" => false, "error" => "Prepare failed (student_id delete): " . $conn->error]);
+        exit;
+    }
 
-    $stmt->close();
+    // If not deleted by student_id, and id looks numeric, try deleting by numeric DB id
+    if (ctype_digit($id)) {
+        $intId = intval($id);
+        $delById = $conn->prepare("DELETE FROM students WHERE id = ?");
+        if ($delById) {
+            $delById->bind_param("i", $intId);
+            $delById->execute();
+            if ($delById->affected_rows > 0) {
+                echo json_encode(["success" => true, "message" => "Student deleted by id"]);
+                $delById->close();
+                exit;
+            } else {
+                // delete executed but no rows affected (should be rare)
+                echo json_encode(["success" => false, "error" => "Delete executed but no rows affected (id)"]);
+                $delById->close();
+                exit;
+            }
+        } else {
+            echo json_encode(["success" => false, "error" => "Prepare failed (id delete): " . $conn->error]);
+            exit;
+        }
+    }
+
+    // Nothing deleted
+    echo json_encode(["success" => false, "error" => "Student not found"]);
+    exit;
 }
 
 $conn->close();

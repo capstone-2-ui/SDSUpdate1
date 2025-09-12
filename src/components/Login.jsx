@@ -19,18 +19,15 @@ export default function Login({ onLogin }) {
       headers: {
         "Content-Type": "application/json"
       },
+      credentials: "include", // <--- necessary so browser stores PHP session cookie
       body: JSON.stringify({ email, password })
     })
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          // ✅ Store email + role
           onLogin({ email: data.user.email, role: data.user.role });
-
-          // Navigate based on role
-          if (data.user.role === "ADMIN") {
-            navigate("/dashboard", { replace: true });
-          } else if (data.user.role === "OSA") {
+          const role = (data.user.role || "").toUpperCase();
+          if (role === "ADMIN" || role === "OSA" || role === "GUEST") {
             navigate("/dashboard", { replace: true });
           } else {
             alert("Unauthorized role");

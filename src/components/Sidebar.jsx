@@ -25,6 +25,8 @@ export default function Sidebar({ onLogout, user }) {
   const filteredItems =
     user?.role === "OSA"
       ? items.filter((it) => it.key === "dashboard" || it.key === "student")
+      : user?.role === "GUEST"
+      ? items.filter((it) => it.key === "dashboard" || it.key === "student")
       : items;
 
   // Icons (same as before)

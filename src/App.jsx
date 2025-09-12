@@ -31,8 +31,14 @@ function App() {
   }
 
   // Protect Admin-only routes
-  function AdminRoute({ element }) {
-    return user?.role === "ADMIN" ? element : <Navigate to="/dashboard" replace />;
+  function AdminRoute({ element, ...rest }) {
+    const elementWithProps = React.cloneElement(element, { ...rest });
+    return user?.role === "ADMIN" ? elementWithProps : <Navigate to="/dashboard" replace />;
+  }
+
+  // Protect Guest-only routes
+  function GuestRoute({ element }) {
+    return user?.role === "GUEST" ? element : <Navigate to="/dashboard" replace />;
   }
 
   return (
@@ -62,9 +68,13 @@ function App() {
               <Route path="/grade" element={<AdminRoute element={<GradePage />} />} />
               <Route path="/section" element={<AdminRoute element={<SectionPage />} />} />
               <Route path="/strand" element={<AdminRoute element={<StrandPage />} />} />
-              <Route path="/user" element={<AdminRoute element={<UserPage />} />} />
+              <Route path="/user" element={<AdminRoute element={<UserPage onLogout={handleLogout} />} />} />
               <Route path="/report" element={<AdminRoute element={<ReportPage />} />} />
               <Route path="/incident" element={<AdminRoute element={<IncidentPage />} />} />
+
+              {/* ✅ Guest only routes */}
+              <Route path="/dashboard" element={<GuestRoute element={<DashboardPage />} />} />
+              <Route path="/student-incident" element={<GuestRoute element={<StudentIncidentPage />} />} />
 
               {/* Catch-all */}
               <Route path="*" element={<h2>Page not found</h2>} />
