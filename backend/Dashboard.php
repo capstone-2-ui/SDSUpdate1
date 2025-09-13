@@ -5,69 +5,80 @@ header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Database connection
+// Database connection - change these if your MySQL user/pass/db differ
 $servername = "localhost";
-$username = "root"; // change if you set a password
-$password = "";     // change if you set a password
-$dbname = "dashboard";
+$username = "root";
+$password = "";
+// Use the incidents DB we created earlier (change if you prefer a different DB)
+$dbname = "incident_db";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
-
-// Check connection
 if ($conn->connect_error) {
-    die(json_encode(["error" => "Connection failed: " . $conn->connect_error]));
+    http_response_code(500);
+    echo json_encode(["error" => "Connection failed: " . $conn->connect_error]);
+    exit;
 }
 
-// Query 1: Sanctions count
+/**
+ * 1) Active Sanction (top 3 by count)
+ * We aggregate incidents.sanction text.
+ */
 $sanctions = [];
-$sql1 = "SELECT st.name AS sanction_type, COUNT(s.id) AS total
-         FROM sanctions s
-         JOIN sanction_types st ON s.sanction_type_id = st.id
-         GROUP BY st.name";
-$result1 = $conn->query($sql1);
-while ($row = $result1->fetch_assoc()) {
-    $sanctions[] = [
-        "name" => $row["sanction_type"],
-        "value" => intval($row["total"])
-    ];
+$sqlSanctions = "SELECT IFNULL(NULLIF(TRIM(sanction),''),'(Unspecified)') AS sanction_type, COUNT(*) AS total
+                 FROM incidents
+                 GROUP BY sanction_type
+                 ORDER BY total DESC
+                 LIMIT 3";
+$resS = $conn->query($sqlSanctions);
+if ($resS) {
+    while ($r = $resS->fetch_assoc()) {
+        $sanctions[] = [
+            "name" => $r["sanction_type"],
+            "value" => intval($r["total"])
+        ];
+    }
 }
 
-// Query 2: Violations per department
+/**
+ * 2) Violations per Department/Grade
+ * We group by department if present, otherwise by grade; fallback 'Unknown'
+ */
 $violationsByDept = [];
-$sql2 = "SELECT d.name AS department, COUNT(v.id) AS violations
-         FROM departments d
-         LEFT JOIN students s ON s.department_id = d.id
-         LEFT JOIN violations v ON v.student_id = s.id
-         GROUP BY d.name";
-$result2 = $conn->query($sql2);
-while ($row = $result2->fetch_assoc()) {
-    $violationsByDept[] = [
-        "department" => $row["department"],
-        "violations" => intval($row["violations"])
-    ];
+$sqlDept = "SELECT COALESCE(NULLIF(TRIM(department),''), NULLIF(TRIM(grade),''), '(Unknown)') AS label, COUNT(*) AS violations
+            FROM incidents
+            GROUP BY label
+            ORDER BY violations DESC";
+$resD = $conn->query($sqlDept);
+if ($resD) {
+    while ($r = $resD->fetch_assoc()) {
+        $violationsByDept[] = [
+            "department" => $r["label"],
+            "violations" => intval($r["violations"])
+        ];
+    }
 }
 
-// Query 3: Monthly violations
-$monthly = [];
-$sql3 = "SELECT MONTHNAME(v.date_reported) AS month, COUNT(v.id) AS total
-         FROM violations v
-         GROUP BY MONTH(v.date_reported)
-         ORDER BY MONTH(v.date_reported)";
-$result3 = $conn->query($sql3);
+/**
+ * 3) Monthly violations (Jan..Dec)
+ * We build full 12-month array and fill in counts from incidents.created_at
+ */
 $months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 $monthly = array_map(function($m) { return ["month"=>$m,"total"=>0]; }, $months);
 
-while ($row = $result3->fetch_assoc()) {
-    foreach ($monthly as &$m) {
-        if ($m["month"] == substr($row["month"], 0, 3)) {
-            $m["total"] = intval($row["total"]);
+$sqlMonthly = "SELECT MONTH(created_at) AS m, COUNT(*) AS total FROM incidents GROUP BY MONTH(created_at)";
+$resM = $conn->query($sqlMonthly);
+if ($resM) {
+    while ($r = $resM->fetch_assoc()) {
+        $m = intval($r["m"]);
+        if ($m >= 1 && $m <= 12) {
+            // map 1-based month to our months array (0-based index)
+            $monthly[$m-1]["total"] = intval($r["total"]);
         }
     }
 }
 
 $conn->close();
 
-// Send JSON response
 echo json_encode([
     "sanctions" => $sanctions,
     "violationsByDept" => $violationsByDept,

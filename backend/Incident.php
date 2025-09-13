@@ -16,7 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $host = "localhost";
 $user = "root";
 $pass = "";
-$db   = "incident";
+
+// <-- changed DB name to incident_db so table includes grade/section columns
+$db   = "incident_db";
 
 $conn = new mysqli($host, $user, $pass, $db);
 if ($conn->connect_error) {
@@ -39,6 +41,8 @@ if ($method === "POST") {
     $studentId  = $data["id"] ?? ($data["student_id"] ?? "");
     $name       = $data["name"] ?? "";
     $department = $data["department"] ?? "";
+    // new: read grade from payload
+    $grade      = $data["grade"] ?? "";
     $year       = $data["year"] ?? "";
     $section    = $data["section"] ?? "";
     $type       = $data["type"] ?? "";
@@ -46,8 +50,9 @@ if ($method === "POST") {
     $violation  = $data["violation"] ?? "";
     $sanction   = $data["sanction"] ?? "";
 
-    $stmt = $conn->prepare("INSERT INTO incidents (student_id, name, department, year, section, type, offense, violation, sanction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssssssss", $studentId, $name, $department, $year, $section, $type, $offense, $violation, $sanction);
+    // include grade in the INSERT columns/placeholders and bind params
+    $stmt = $conn->prepare("INSERT INTO incidents (student_id, name, department, grade, year, section, type, offense, violation, sanction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssssssssss", $studentId, $name, $department, $grade, $year, $section, $type, $offense, $violation, $sanction);
     if ($stmt->execute()) {
         $insertedId = $stmt->insert_id;
         $stmt->close();
@@ -119,6 +124,8 @@ elseif ($method === "PUT") {
     $studentId  = $data["student_id"] ?? ($data["id"] ?? "");
     $name       = $data["name"] ?? "";
     $department = $data["department"] ?? "";
+    // new: include grade when updating
+    $grade      = $data["grade"] ?? "";
     $year       = $data["year"] ?? "";
     $section    = $data["section"] ?? "";
     $type       = $data["type"] ?? "";
@@ -126,8 +133,9 @@ elseif ($method === "PUT") {
     $violation  = $data["violation"] ?? "";
     $sanction   = $data["sanction"] ?? "";
 
-    $stmt = $conn->prepare("UPDATE incidents SET student_id=?, name=?, department=?, year=?, section=?, type=?, offense=?, violation=?, sanction=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-    $stmt->bind_param("sssssssssi", $studentId, $name, $department, $year, $section, $type, $offense, $violation, $sanction, $id);
+    // include grade in the update set and bind params accordingly
+    $stmt = $conn->prepare("UPDATE incidents SET student_id=?, name=?, department=?, grade=?, year=?, section=?, type=?, offense=?, violation=?, sanction=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    $stmt->bind_param("ssssssssssi", $studentId, $name, $department, $grade, $year, $section, $type, $offense, $violation, $sanction, $id);
     if ($stmt->execute()) {
         echo json_encode(["success" => true, "message" => "Incident updated"]);
     } else {

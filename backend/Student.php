@@ -55,15 +55,52 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         fgetcsv($handle);
 
         while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+            // Skip empty rows
+            if (is_array($data) && count($data) === 1 && trim($data[0]) === "") {
+                continue;
+            }
+
             $rowCount++;
             $name       = $data[0] ?? "";
             $student_id = $data[1] ?? "";
-            $department = $data[2] ?? "";
-            $section    = $data[3] ?? "";
-            $grade      = $data[4] ?? "";
-            $strand     = $data[5] ?? "";
-            $year       = $data[6] ?? "";
-            $email      = $student_id . "@school.edu"; // dummy email if missing
+
+            // Detect whether the template includes an Email column.
+            // New template: Name,ID,Email,Department,Section,Grade,Strand,Year
+            // Old template: Name,ID,Department,Section,Grade,Strand,Year
+            $department = "";
+            $section = "";
+            $grade = "";
+            $strand = "";
+            $year = "";
+            $email = "";
+
+            if (isset($data[2]) && filter_var(trim($data[2]), FILTER_VALIDATE_EMAIL)) {
+                // Email column present
+                $email      = trim($data[2]);
+                $department = $data[3] ?? "";
+                $section    = $data[4] ?? "";
+                $grade      = $data[5] ?? "";
+                $strand     = $data[6] ?? "";
+                $year       = $data[7] ?? "";
+            } else {
+                // No email column: fall back to old layout and synthesize email if missing
+                $department = $data[2] ?? "";
+                $section    = $data[3] ?? "";
+                $grade      = $data[4] ?? "";
+                $strand     = $data[5] ?? "";
+                $year       = $data[6] ?? "";
+                $email      = !empty($student_id) ? ($student_id . "@school.edu") : ($data[2] ?? "");
+            }
+
+            // Trim values
+            $name = trim($name);
+            $student_id = trim($student_id);
+            $department = trim($department);
+            $section = trim($section);
+            $grade = trim($grade);
+            $strand = trim($strand);
+            $year = trim($year);
+            $email = trim($email);
 
             if (!empty($student_id) && !empty($name)) {
                 $stmt = $conn->prepare("INSERT INTO students (name, email, student_id, department, year, grade, section, strand, status) 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./DashboardPage.css";
 import {
   PieChart,
@@ -14,38 +14,37 @@ import {
 } from "recharts";
 
 function DashboardPage() {
-  const [sanctionData] = useState([
-    { name: "Verbal Warning", value: 5, className: "verbal" },
-    { name: "Written Warning", value: 2, className: "written" },
-    { name: "Suspension", value: 10, className: "suspension" },
-  ]);
+  const [sanctionData, setSanctionData] = useState([]);
+  const [violationByDept, setViolationByDept] = useState([]);
+  const [monthlyViolations, setMonthlyViolations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [violationByDept] = useState([
-    { department: "BSIT", violations: 0 },
-    { department: "BEED", violations: 0 },
-    { department: "BSHM", violations: 0 },
-    { department: "BSCE", violations: 0 },
-    { department: "Grade 12", violations: 0 },
-    { department: "Grade 8", violations: 0 },
-    { department: "Grade 9", violations: 0 },
-  ]);
+  const COLORS = ["#d2a56a", "#a4702d", "#5b3d1e", "#bfa176", "#8f6a3f"];
 
-  const [monthlyViolations] = useState([
-    { month: "Jan", total: 10 },
-    { month: "Feb", total: 20 },
-    { month: "Mar", total: 30 },
-    { month: "Apr", total: 65 },
-    { month: "May", total: 40 },
-    { month: "Jun", total: 50 },
-    { month: "Jul", total: 60 },
-    { month: "Aug", total: 70 },
-    { month: "Sep", total: 65 },
-    { month: "Oct", total: 80 },
-    { month: "Nov", total: 90 },
-    { month: "Dec", total: 99 },
-  ]);
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("http://localhost/SDSUpdate1-main/backend/Dashboard.php");
+        const data = await res.json();
+        // Backend returns arrays shaped as:
+        // { sanctions: [{name, value}], violationsByDept: [{department, violations}], monthlyViolations: [{month, total}] }
+        setSanctionData(Array.isArray(data.sanctions) ? data.sanctions : []);
+        setViolationByDept(Array.isArray(data.violationsByDept) ? data.violationsByDept : []);
+        setMonthlyViolations(Array.isArray(data.monthlyViolations) ? data.monthlyViolations : []);
+      } catch (err) {
+        console.error("Failed to load dashboard data", err);
+        setSanctionData([]);
+        setViolationByDept([]);
+        setMonthlyViolations([]);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const COLORS = ["#d2a56a", "#a4702d", "#5b3d1e"];
+    fetchDashboard();
+    // Optional: poll every X minutes by setInterval (not added by default)
+  }, []);
 
   return (
     <div className="dashboard-container">
@@ -77,7 +76,7 @@ function DashboardPage() {
                   label
                 >
                   {sanctionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index]} />
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
@@ -86,10 +85,11 @@ function DashboardPage() {
 
             {/* Custom Legend */}
             <ul className="legend">
+              {sanctionData.length === 0 && !loading && <li>No sanction data</li>}
               {sanctionData.map((entry, index) => (
                 <li key={index}>
-                  <span className={`dot ${entry.className}`}></span>
-                  {entry.name}
+                  <span className={`dot`} style={{ background: COLORS[index % COLORS.length] }}></span>
+                  {entry.name} — {entry.value}
                 </li>
               ))}
             </ul>
@@ -108,6 +108,16 @@ function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan={2}>Loading...</td>
+                  </tr>
+                )}
+                {!loading && violationByDept.length === 0 && (
+                  <tr>
+                    <td colSpan={2}>No data</td>
+                  </tr>
+                )}
                 {violationByDept.map((row, index) => (
                   <tr key={index}>
                     <td>{row.department}</td>
@@ -127,7 +137,7 @@ function DashboardPage() {
             <LineChart data={monthlyViolations}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis domain={[0, 100]} />
+              <YAxis allowDecimals={false} />
               <Tooltip />
               <Line type="monotone" dataKey="total" stroke="#8884d8" />
             </LineChart>

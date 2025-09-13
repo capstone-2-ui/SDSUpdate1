@@ -20,6 +20,9 @@ export default function StudentIncidentPage() {
   const [filterAZ, setFilterAZ] = useState(null);
   const [filterDepartment, setFilterDepartment] = useState("");
   const [filterYear, setFilterYear] = useState("");
+  const [filterSection, setFilterSection] = useState("");
+  const [filterGrade, setFilterGrade] = useState("");
+  const [filterStrand, setFilterStrand] = useState("");
   const fileInputRef = useRef(null);
   const filterRef = useRef(null);
   const navigate = useNavigate();
@@ -279,7 +282,9 @@ export default function StudentIncidentPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const csv = "Name,ID,Department,Section,Grade,Strand,Year\n";
+    // Add Email column after ID so template is:
+    // Name,ID,Email,Department,Section,Grade,Strand,Year
+    const csv = "Name,ID,Email,Department,Section,Grade,Strand,Year\n";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -313,13 +318,22 @@ export default function StudentIncidentPage() {
     if (filterYear) {
       data = data.filter((s) => s.year === filterYear);
     }
+    if (filterSection) {
+      data = data.filter((s) => (s.section || "") === filterSection);
+    }
+    if (filterGrade) {
+      data = data.filter((s) => (s.grade || "") === filterGrade);
+    }
+    if (filterStrand) {
+      data = data.filter((s) => (s.strand || "") === filterStrand);
+    }
     if (filterAZ === "asc") {
       data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     } else if (filterAZ === "desc") {
       data.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
     }
     return data;
-  }, [students, filterAZ, filterDepartment, filterYear, searchTerm]);
+  }, [students, filterAZ, filterDepartment, filterYear, filterSection, filterGrade, filterStrand, searchTerm]);
 
   // Render fields
   const renderFields = (level, student = {}) => {
@@ -365,17 +379,6 @@ export default function StudentIncidentPage() {
               {grades.map((g) => (
                 <option key={g.id} value={g.grade}>
                   {g.grade}
-                </option>
-              ))}
-            </select>
-
-
-            <label>Section*</label>
-            <select name="section" defaultValue={student.section} required>
-              <option value="">Select Section</option>
-              {sections.map((s) => (
-                <option key={s.id} value={s.section}>
-                  {s.section}
                 </option>
               ))}
             </select>
@@ -430,6 +433,14 @@ export default function StudentIncidentPage() {
       <>
         <label>Name*</label>
         <input name="name" defaultValue={student.name || ""} required />
+
+        <label>Email*</label>
+        <input
+          name="email"
+          type="email"
+          defaultValue={student.email || ""}
+          required
+        />
 
         <label>ID*</label>
         {/* backend expects the field named 'id' for the edit form (we pass student_id via this field) */}
@@ -487,6 +498,21 @@ export default function StudentIncidentPage() {
     );
   };
 
+  const handleApplyFilters = () => {
+    // Close dropdown — the state values are already applied as you change them
+    setFilterOpen(false);
+  };
+
+  const handleClearFilters = () => {
+    // Reset filter state but keep dropdown open so user can re-select
+    setFilterAZ(null);
+    setFilterDepartment("");
+    setFilterYear("");
+    setFilterSection("");
+    setFilterGrade("");
+    setFilterStrand("");
+  };
+
   return (
     <div className="dashboard-container">
       {/* Header */}
@@ -528,16 +554,36 @@ export default function StudentIncidentPage() {
           <button className="btn export" onClick={handleExport}>
             Export
           </button>
+          {/* Filter button (improved: focus dropdown on open) */}
           <button
             className="btn filter"
-            onClick={() => setFilterOpen(!filterOpen)}
+            onClick={() => {
+              setFilterOpen((prev) => {
+                const next = !prev;
+                // when opening, focus first control in the dropdown shortly after render
+                if (!next) {
+                  // closing -> nothing to do
+                } else {
+                  setTimeout(() => {
+                    const root = filterRef.current;
+                    if (!root) return;
+                    // prefer a text input/select first
+                    const focusable = root.querySelector("select, input[type='text'], input[type='checkbox'], input[type='radio']");
+                    if (focusable) focusable.focus();
+                  }, 0);
+                }
+                return next;
+              });
+            }}
           >
             Filter
           </button>
+
           {filterOpen && (
-            <div className="filter-dropdown">
+            <div className="filter-dropdown" role="region" aria-label="Filters">
               <h3 className="filter-title">Filter</h3>
-              {/* A-Z */}
+
+              {/* Alphabetical */}
               <div className="filter-section">
                 <label className="filter-section-title">Alphabetical</label>
                 <div className="filter-checkbox">
@@ -545,11 +591,9 @@ export default function StudentIncidentPage() {
                     <input
                       type="checkbox"
                       checked={filterAZ === "asc"}
-                      onChange={() =>
-                        setFilterAZ(filterAZ === "asc" ? null : "asc")
-                      }
+                      onChange={() => setFilterAZ(filterAZ === "asc" ? null : "asc")}
                     />{" "}
-                    Filter by A–Z
+                    A → Z
                   </label>
                 </div>
                 <div className="filter-checkbox">
@@ -557,47 +601,100 @@ export default function StudentIncidentPage() {
                     <input
                       type="checkbox"
                       checked={filterAZ === "desc"}
-                      onChange={() =>
-                        setFilterAZ(filterAZ === "desc" ? null : "desc")
-                      }
+                      onChange={() => setFilterAZ(filterAZ === "desc" ? null : "desc")}
                     />{" "}
-                    Filter by Z–A
+                    Z → A
                   </label>
                 </div>
               </div>
+
               {/* Department */}
               <div className="filter-section">
                 <label className="filter-section-title">Department</label>
                 <select
                   value={filterDepartment}
-                  onChange={(e) => setFilterDepartment(e.target.value)}
+                  onChange={(e) => {
+                    setFilterDepartment(e.target.value);
+                    // If you want dependent selects cleared when department changes, uncomment these:
+                    // setFilterSection("");
+                    // setFilterGrade("");
+                    // setFilterStrand("");
+                  }}
                 >
                   <option value="">All Departments</option>
                   {departments.map((d) => (
-                    <option key={d.id} value={d.name}>
-                      {d.name}
+                    // Use the 'department' field for both value and label so it matches student.department
+                    <option key={d.id} value={d.department ?? d.name ?? ""}>
+                      {d.department ?? d.name ?? ""}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* Section (new) */}
+              <div className="filter-section">
+                <label className="filter-section-title">Section</label>
+                <select
+                  value={filterSection}
+                  onChange={(e) => setFilterSection(e.target.value)}
+                >
+                  <option value="">All Sections</option>
+                  {sections.map((s) => (
+                    <option key={s.id} value={s.section}>
+                      {s.section}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Grade (new) */}
+              <div className="filter-section">
+                <label className="filter-section-title">Grade</label>
+                <select
+                  value={filterGrade}
+                  onChange={(e) => setFilterGrade(e.target.value)}
+                >
+                  <option value="">All Grades</option>
+                  {grades.map((g) => (
+                    <option key={g.id} value={g.grade}>
+                      {g.grade}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Strand (new) */}
+              <div className="filter-section">
+                <label className="filter-section-title">Strand</label>
+                <select
+                  value={filterStrand}
+                  onChange={(e) => setFilterStrand(e.target.value)}
+                >
+                  <option value="">All Strands</option>
+                  {strands.map((st) => (
+                    <option key={st.id} value={st.strand}>
+                      {st.strand}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Year */}
               <div className="filter-section">
                 <label className="filter-section-title">Year Level</label>
                 <div className="year-radio-group">
-                  {["1st Year", "2nd Year", "3rd Year", "4th Year", ""].map(
-                    (yr, i) => (
-                      <label key={i}>
-                        <input
-                          type="radio"
-                          name="year"
-                          value={yr}
-                          checked={filterYear === yr}
-                          onChange={(e) => setFilterYear(e.target.value)}
-                        />{" "}
-                        {yr || "All"}
-                      </label>
-                    )
-                  )}
+                  {["1st Year", "2nd Year", "3rd Year", "4th Year", ""].map((yr, i) => (
+                    <label key={i}>
+                      <input
+                        type="radio"
+                        name="year"
+                        value={yr}
+                        checked={filterYear === yr}
+                        onChange={(e) => setFilterYear(e.target.value)}
+                      />{" "}
+                      {yr || "All"}
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
@@ -732,7 +829,7 @@ export default function StudentIncidentPage() {
                 </p>
                 <p>
                   <b>Email:</b> {selectedStudent.email || "N/A"}
-                </p>
+                </p>  
                 <p>
                   <b>Student ID:</b> {selectedStudent.student_id ?? selectedStudent.id}
                 </p>

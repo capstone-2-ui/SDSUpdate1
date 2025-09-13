@@ -4,13 +4,25 @@ session_start();
 // Allow CORS with credentials: reflect origin and allow credentials
 header("Access-Control-Allow-Origin: http://localhost:3000");
 header("Access-Control-Allow-Credentials: true");
+// Allow GET here so frontend can query session on app load
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Content-Type: application/json; charset=UTF-8");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     // preflight needs to send same CORS headers
     http_response_code(200);
+    exit;
+}
+
+// NEW: allow a GET request to return current session user (so frontend can restore login)
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    if (isset($_SESSION['current_user']) && is_array($_SESSION['current_user'])) {
+        // return the stored session user object
+        echo json_encode(["success" => true, "user" => $_SESSION['current_user']]);
+    } else {
+        echo json_encode(["success" => false, "message" => "No active session"]);
+    }
     exit;
 }
 

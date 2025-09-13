@@ -36,6 +36,19 @@ function IncidentPage() {
 
   const exportBtnRef = useRef(null);
 
+  // helper: return canonical student id from either an incident row or a student object
+  const getCanonicalStudentId = (obj) => {
+    if (!obj) return "";
+    // prefer explicit student_id fields, fall back to nested student object fields
+    return (
+      obj.student_id ??
+      obj.studentId ??
+      obj.student?.student_id ??
+      obj.student?.id ??
+      undefined
+    );
+  };
+
   // If navigated with a student in location.state, set it as selected
   useEffect(() => {
     if (location?.state?.student) {
@@ -52,15 +65,105 @@ function IncidentPage() {
     try {
       const res = await fetch(API_BASE);
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setViolations(data);
-      } else if (Array.isArray(data.incidents)) {
-        setViolations(data.incidents);
-      } else {
-        setViolations([]);
-      }
+
+      // extract the array payload in either shape the backend may return
+      let items = [];
+      if (Array.isArray(data)) items = data;
+      else if (data && Array.isArray(data.incidents)) items = data.incidents;
+      else items = [];
+
+      // Normalize each incident so it has top-level name/grade/section/department/year etc.
+      const normalized = items.map((it) => {
+        const studentObj = it.student || {};
+        // helpers: prefer top-level value, then student.*, then common alternate keys
+        const pick = (...keys) => {
+          for (const k of keys) {
+            if (k == null) continue;
+            // support dotted keys like 'student.firstName' by resolving via studentObj when needed
+            if (k.includes('.') && k.startsWith('student.')) {
+              const kk = k.split('.').slice(1).join('.');
+              if (studentObj[kk] !== undefined) return studentObj[kk];
+            } else if (it[k] !== undefined) return it[k];
+          }
+          return undefined;
+        };
+
+        // simpler explicit fallbacks (more readable)
+        const name =
+          it.name ??
+          it.student_name ??
+          studentObj.name ??
+          studentObj.fullName ??
+          it.full_name ??
+          "";
+
+        const department =
+          it.department ??
+          it.dept ??
+          studentObj.department ??
+          studentObj.dept ??
+          it.college ??
+          "";
+
+        const grade =
+          it.grade ??
+          it.year ??
+          it.level ??
+          studentObj.grade ??
+          studentObj.year ??
+          studentObj.level ??
+          "";
+
+        const year =
+          it.year ??
+          it.grade ??
+          it.level ??
+          studentObj.year ??
+          studentObj.grade ??
+          studentObj.level ??
+          "";
+
+        const section =
+          it.section ??
+          it.sec ??
+          it.section_name ??
+          it.sectionName ??
+          studentObj.section ??
+          studentObj.sec ??
+          "";
+
+        const strand =
+          it.strand ??
+          studentObj.strand ??
+          it.track ??
+          "";
+
+        const student_id =
+          it.student_id ??
+          it.studentId ??
+          studentObj.student_id ??
+          studentObj.id ??
+          it.student_id_original ??
+          it.studentIdOriginal ??
+          undefined;
+
+        return {
+          ...it,
+          // ensure these top-level keys exist for consistent rendering
+          name,
+          department,
+          grade,
+          year,
+          section,
+          strand,
+          student_id,
+        };
+      });
+
+      setViolations(normalized);
     } catch (err) {
       console.error("Failed to fetch incidents:", err);
+      setViolations([]);
     }
   };
 
@@ -141,9 +244,9 @@ function IncidentPage() {
 
   // Export Table Data
   const handleExport = () => {
-    const headers = ["ID", "Name", "Department", "Year", "Section", "Violation"];
+    const headers = ["Student ID", "Name", "Department", "Year", "Section", "Violation"];
     const rows = violations.map((v) => [
-      v.id,
+      v.student_id || v.id,
       v.name,
       v.department || v.dept,
       v.year,
@@ -232,9 +335,10 @@ function IncidentPage() {
     }
 
     const payload = {
-      student_id: selectedStudent.id,
+      student_id: selectedStudent?.student_id ?? selectedStudent?.id,
       name: selectedStudent.name,
       department: selectedStudent.department || selectedStudent.dept || "",
+      grade: selectedStudent.grade || selectedStudent.level || "",
       year: selectedStudent.year,
       section: selectedStudent.section,
       type: formData.type,
@@ -260,14 +364,23 @@ function IncidentPage() {
         const content = (
           <div className="modal-inner-content">
             <h3>{student.name}</h3>
+
             <p><b>ID:</b> {student.student_id ?? student.id}</p>
-            <p><b>Department:</b> {student.department || student.dept}</p>
-            <p><b>Year:</b> {student.year}</p>
-            <p><b>Section:</b> {student.section}</p>
-            <p><b>Violation:</b> {student.violation}</p>
+            {/* show email if present */}
+            { (student.email || student.parentEmail) && <p><b>Email:</b> {student.email ?? student.parentEmail}</p> }
+
+            <p><b>Department:</b> {student.department || student.dept || "-"}</p>
+            <p><b>Grade:</b> {student.grade ?? student.level ?? "-"}</p>
+            <p><b>Strand:</b> {student.strand ??"-"}</p>
+            <p><b>Year:</b> {student.year ?? "-"}</p>
+            <p><b>Section:</b> {student.section ?? "-"}</p>
+
+            {/* incident-specific fields (if present) */}
+            {student.violation && <p><b>Violation:</b> {student.violation}</p>}
+            {student.sanction && <p><b>Sanction:</b> {student.sanction}</p>}
           </div>
         );
-        setModal({ open: true, title: action, content, pos: null, noHeader: false });
+        setModal({ open: true, title: "View Student Profile", content, pos: null, noHeader: false });
         break;
       }
 
@@ -280,7 +393,7 @@ function IncidentPage() {
           year: student.year || "",
           section: student.section || "",
           type: student.type || "",
-          offense: student.offense || "1st",
+          offense: student.offense || "",
           violation: student.violation || "",
           sanction: student.sanction || "",
         };
@@ -313,7 +426,7 @@ function IncidentPage() {
           noHeader: false,
           content: (
             <div style={{ padding: 12 }}>
-              <p>Delete incident for <strong>{student.name}</strong> (ID: {student.id})?</p>
+              <p>Delete incident for <strong>{student.name}</strong> (ID: {student.student_id ?? student.id})?</p>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={async () => {
                   const res = await deleteIncident(student.id);
@@ -331,16 +444,40 @@ function IncidentPage() {
       case "Process": {
         // use MajorOffenseModal; hide the redundant outer header
         const lastSaved = majorSteps[student.id] || 0;
+        const studentSavedData = majorData[student.id] || {};
+
+        // warn if not a Major-type and nothing saved yet
         if ((student.type || student.violation || "").toLowerCase() !== "major" && (formData.type !== "Major")) {
           if (!lastSaved) {
             setModal({ open: true, title: action, content: <p>Please set the violation type to <b>Major</b> first to start the process.</p>, pos: null, noHeader: false });
             break;
           }
         }
+
+        // If all steps already completed, show a modal summarizing all 5 steps
         if (lastSaved >= 5) {
-          setModal({ open: true, title: action, content: <p>All steps are already completed for {student.name}.</p>, pos: null, noHeader: false });
+          setModal({
+            open: true,
+            title: (
+              <div className="modal-header-flex">
+                <span>Process - Completed</span>
+                <span className="student-name-brown">{student.name}</span>
+              </div>
+            ),
+            pos: null,
+            noHeader: false,
+            content: (
+              <CompletedMajorStepsModal
+                student={student}
+                data={studentSavedData}
+                onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+              />
+            ),
+          });
           break;
         }
+
+        // otherwise continue the normal flow to open the next step
         const nextStep = Math.min(lastSaved + 1, 5);
         setModal({
           open: true,
@@ -433,7 +570,7 @@ function IncidentPage() {
           </div>
           <div>
             <label>Student ID</label>
-            <input type="text" value={selectedStudent?.id || ""} readOnly />
+            <input type="text" value={selectedStudent?.student_id ?? selectedStudent?.id ?? ""} readOnly />
           </div>
           <div>
             <label>Types of Violation</label>
@@ -454,9 +591,11 @@ function IncidentPage() {
               value={formData.offense}
               onChange={handleChange}
             >
+              <option value="Select">Select</option>
               <option value="1st">1st</option>
               <option value="2nd">2nd</option>
               <option value="3rd">3rd</option>
+              <option value="Major">Major</option>
             </select>
           </div>
           <div>
@@ -641,61 +780,73 @@ function IncidentPage() {
       <table className="incident-table">
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Student ID</th>
             <th>Name</th>
             <th>Department</th>
-            <th>Year</th>
+            <th>Grade</th>
             <th>Section</th>
             <th>Violation</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
-          {filteredViolations.map((v, index) => (
-            <tr key={index}>
-              <td>{v.id}</td>
-              <td>{v.name}</td>
-              <td>{v.department || v.dept}</td>
-              <td>{v.year}</td>
-              <td>{v.section}</td>
-              <td>{v.violation}</td>
-              <td>
-                <button
-                  className="menu-btn"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setModal({
-                      open: true,
-                      title: "Actions",
-                      noHeader: true,
-                      pos: { left: rect.left + window.scrollX, top: rect.bottom + window.scrollY },
-                      content: (
-                        <div className="action-modal-buttons">
-                          <button onClick={() => handleMenuAction("View Student Profile", v)}>
-                            View Student Profile
-                          </button>
-                          <button onClick={() => handleMenuAction("Edit Violation", v)}>
-                            Edit Violation
-                          </button>
-                          <button onClick={() => handleMenuAction("Process", v)}>
-                            Process
-                          </button>
-                          <button onClick={() => handleMenuAction("Send Notification", v)}>
-                            Send Notification
-                          </button>
-                          <button onClick={() => handleMenuAction("Delete", v)}>
-                            Delete
-                          </button>
-                        </div>
-                      ),
-                    });
-                  }}
-                >
-                  ⋮
-                </button>
-              </td>
-            </tr>
-          ))}
+          {filteredViolations.map((v, index) => {
+            // grade can be stored as grade, year, or level depending on source
+            const grade = v.grade ?? v.year ?? v.level ?? "";
+            // section can be stored under different keys in different responses
+            const section = v.section ?? v.sec ?? v.section_name ?? v.sectionName ?? "";
+            const department = v.department ?? v.dept ?? "";
+            return (
+              <tr key={index}>
+                <td>{getCanonicalStudentId(v) || "-"}</td>
+                <td>{v.name || "-"}</td>
+                <td>{department || "-"}</td>
+                <td>{grade || "-"}</td>
+                <td>{section || "-"}</td>
+                <td>{v.violation || "-"}</td>
+                <td>
+                  <button
+                    className="menu-btn"
+                    onClick={() => {
+                      // Open a centered modal (pos: null) and show the clicked student's name in the header (brown)
+                      setModal({
+                        open: true,
+                        title: (
+                          <div className="modal-header-flex">
+                            <span></span>
+                            <span className="student-name-brown">{v.name}</span>
+                          </div>
+                        ),
+                        noHeader: false,
+                        pos: null, // center modal instead of popover
+                        content: (
+                          <div className="action-modal-buttons">
+                            <button onClick={() => handleMenuAction("View Student Profile", v)}>
+                              View Student Profile
+                            </button>
+                            <button onClick={() => handleMenuAction("Edit Violation", v)}>
+                              Edit Violation
+                            </button>
+                            <button onClick={() => handleMenuAction("Process", v)}>
+                              Process
+                            </button>
+                            <button onClick={() => handleMenuAction("Send Notification", v)}>
+                              Send Notification
+                            </button>
+                            <button onClick={() => handleMenuAction("Delete", v)}>
+                              Delete
+                            </button>
+                          </div>
+                        ),
+                      });
+                    }}
+                  >
+                    ⋮
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -977,6 +1128,72 @@ function FilterPopover({ onApply, onClose }) {
         <div className="filter-actions">
           <button className="btn-back" onClick={onClose}>Close</button>
           <button className="btn-primary" onClick={apply}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   CompletedMajorStepsModal component (newly added)
+   =========================== */
+function CompletedMajorStepsModal({ student, data = {}, onClose }) {
+  // Helper to safely read nested fields
+  const s = (stepKey, field, fallback = "—") => {
+    const step = data[stepKey] || {};
+    const val = field ? step[field] : step;
+    if (val === undefined || val === null || val === "") return fallback;
+    if (typeof val === "boolean") return val ? "Yes" : "No";
+    return val;
+  };
+
+  return (
+    <div className="completed-steps">
+      <div style={{ padding: 12 }}>
+        <div style={{ marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>{student.name}</h3>
+          <div style={{ color: "#6b5a4a", fontSize: 13 }}>{student.student_id || student.id || ""}</div>
+        </div>
+
+        <div className="step-card">
+          <div className="step-title">Step 1 — Filing &amp; Investigation</div>
+          <div className="step-body">{s("step1", "incidentReport", "No report saved")}</div>
+        </div>
+
+        <div className="step-card">
+          <div className="step-title">Step 2 — Committee on Discipline</div>
+          <div className="step-body">
+            <div><strong>Chair/Dean:</strong> {s("step2", "chairDean")}</div>
+            <div><strong>Faculty Member:</strong> {s("step2", "facultyMember")}</div>
+            <div><strong>SSC Rep:</strong> {s("step2", "sscRep")}</div>
+            <div><strong>DSC Rep:</strong> {s("step2", "dscRep")}</div>
+            <div><strong>Guidance:</strong> {s("step2", "guidance")}</div>
+          </div>
+        </div>
+
+        <div className="step-card">
+          <div className="step-title">Step 3 — Hearing</div>
+          <div className="step-body">
+            <div><strong>Complainant present:</strong> {s("step3", "complainant")}</div>
+            <div><strong>Respondent present:</strong> {s("step3", "respondentPresent")}</div>
+            <div><strong>Parents present:</strong> {s("step3", "parentsPresent")}</div>
+            <div><strong>Witness testimonies:</strong> {s("step3", "witnessTestimonies")}</div>
+            <div><strong>Final statements:</strong> {s("step3", "finalStatements")}</div>
+          </div>
+        </div>
+
+        <div className="step-card">
+          <div className="step-title">Step 4 — Sanction</div>
+          <div className="step-body">{s("step4", "sanction", "No sanction selected")}</div>
+        </div>
+
+        <div className="step-card">
+          <div className="step-title">Step 5 — Decision Approval</div>
+          <div className="step-body">{s("step5", "decisionApproval", "Not recorded")}</div>
+        </div>
+
+        <div className="major-modal-actions" style={{ marginTop: 14 }}>
+          <button className="btn-back" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
