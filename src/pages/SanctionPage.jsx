@@ -23,7 +23,29 @@ export default function SanctionPage({ user }) {
 
   const filterRef = useRef(null);
   const fileInputRef = useRef(null);
+  const timeoutRef = useRef(null);
   const API_URL = "http://localhost/SDSUpdate1-main/backend/Sanction.php"; // <-- adjust if needed
+
+  // Confirmation (top-right green toast)
+  const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
+  const showConfirmation = (message, duration = 3000) => {
+    // clear any existing hide timers
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setConfirmation({ visible: true, message });
+    timeoutRef.current = setTimeout(() => {
+      setConfirmation({ visible: false, message: "" });
+      timeoutRef.current = null;
+    }, duration);
+  };
+  const hideConfirmation = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setConfirmation({ visible: false, message: "" });
+  };
 
   // ---- FETCH ALL SANCTIONS ----
   const fetchSanctions = async () => {
@@ -44,6 +66,12 @@ export default function SanctionPage({ user }) {
 
   useEffect(() => {
     fetchSanctions();
+    // cleanup on unmount
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
   }, []);
 
   // ---- HANDLE INPUT ----
@@ -70,6 +98,7 @@ export default function SanctionPage({ user }) {
       fetchSanctions();
       setFormData({ sanction: "", type: "", offense: "", severity: "" });
       setShowAddModal(false);
+      showConfirmation("Sanction added successfully");
     } catch (err) {
       console.error("Add error:", err);
       alert("Failed to add sanction. See console for details.");
@@ -95,6 +124,7 @@ export default function SanctionPage({ user }) {
       fetchSanctions();
       setFormData({ sanction: "", type: "", offense: "", severity: "" });
       setShowEditModal(false);
+      showConfirmation("Changes saved");
     } catch (err) {
       console.error("Edit error:", err);
       alert("Failed to save changes. See console for details.");
@@ -125,6 +155,7 @@ export default function SanctionPage({ user }) {
         throw new Error(data.message || "Server error");
       }
       fetchSanctions();
+      showConfirmation("Sanction deleted");
     } catch (err) {
       console.error("Delete error:", err);
       alert("Failed to delete sanction. See console for details.");
@@ -215,6 +246,7 @@ export default function SanctionPage({ user }) {
     a.download = "sanctions.csv";
     a.click();
     URL.revokeObjectURL(url);
+    showConfirmation("Export started");
   };
 
   // ---- DOWNLOAD TEMPLATE ----
@@ -227,6 +259,7 @@ export default function SanctionPage({ user }) {
     a.download = "sanction_template.csv";
     a.click();
     URL.revokeObjectURL(url);
+    showConfirmation("Template downloaded");
   };
 
   // ---- BULK UPLOAD ----
@@ -267,7 +300,7 @@ export default function SanctionPage({ user }) {
           throw new Error(data.message || "Bulk upload error");
         }
         fetchSanctions();
-        alert("Bulk upload successful!");
+        showConfirmation("Bulk upload successful!");
       } catch (err) {
         console.error("Bulk upload error:", err);
         alert("Failed to upload CSV. See console for details.");
@@ -295,6 +328,46 @@ export default function SanctionPage({ user }) {
 
   return (
     <div className="dashboard-container">
+      {/* Confirmation toast (top-right) */}
+      {confirmation.visible && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 1000,
+            background: "#0f9d58", // Google-style green
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 8,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            minWidth: 220,
+            maxWidth: 360,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div style={{ flex: 1, fontSize: 14 }}>{confirmation.message}</div>
+          <button
+            onClick={hideConfirmation}
+            aria-label="Close confirmation"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.9)",
+              fontSize: 16,
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header (Dashboard design) */}
       <div className="dashboard-header-bar">
         <h1 className="dashboard-title">Sanction Management</h1>

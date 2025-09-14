@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 
 import Sidebar from "./components/Sidebar";
+import Header from "./components/Header";
 import Login from "./components/Login";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -34,13 +35,30 @@ function App() {
   const [loading, setLoading] = useState(true);
   const LOCAL_FLAG = "sds_logged_in";
 
-  // On mount: always attempt to restore session from backend
+  // On mount: attempt to restore session only if the client-side login flag exists.
   useEffect(() => {
-    setLoading(true);
+    const clientFlag = (() => {
+      try {
+        return localStorage.getItem(LOCAL_FLAG);
+      } catch (e) {
+        return null;
+      }
+    })();
 
+    // If the client flag is missing, don't try to restore a session.
+    // This prevents the app from re-entering the dashboard after a logout
+    // even if the server still has a session cookie.
+    if (clientFlag !== "1") {
+      setLoading(false);
+      setUser(null);
+      return;
+    }
+
+    // Otherwise, attempt to restore a server session (best-effort).
+    setLoading(true);
     fetch("http://localhost/SDSUpdate1-main/backend/login.php", {
       method: "GET",
-      credentials: "include", // send cookies so server can validate session
+      credentials: "include",
     })
       .then((res) => res.json())
       .then((data) => {
@@ -50,15 +68,14 @@ function App() {
             role: (data.user.role || "").toUpperCase(),
           };
           setUser(normalizedUser);
-
-          // Persist client-side flag so subsequent refreshes (after login) keep restoring.
+          // Ensure client flag is set (redundant but harmless).
           try {
             localStorage.setItem(LOCAL_FLAG, "1");
           } catch (e) {
             // ignore localStorage errors
           }
         } else {
-          // No server session: clear client flag and user
+          // No valid server session: clear client flag and user
           try {
             localStorage.removeItem(LOCAL_FLAG);
           } catch (e) {
@@ -138,6 +155,7 @@ function App() {
           <Sidebar onLogout={handleLogout} user={user} />
 
           <main className="main-content">
+            <Header user={user} onLogout={handleLogout} />
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
 

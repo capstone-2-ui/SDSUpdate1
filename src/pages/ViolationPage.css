@@ -365,3 +365,37 @@
         transform: translateY(0);
     }
 }
+
+/* Top-right confirmation box */
+
+.confirmation-topright-box {
+  background: #fff;
+  color: #111;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+  padding: 10px 12px;
+  min-width: 220px;
+  max-width: 340px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-left: 4px solid #2b7a0b; /* success accent */
+}
+
+
+/* Reuse existing toast styles if present (simple example) */
+.toast {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 10040;
+  min-width: 180px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 500;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+.toast.success { background: #28a745; }
+.toast.error { background: #dc3545; }
+.toast.info { background: #17a2b8; }

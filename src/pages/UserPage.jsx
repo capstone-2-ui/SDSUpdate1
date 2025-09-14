@@ -15,6 +15,33 @@ export default function UserPage({ user }) {
   const [formData, setFormData] = useState({ username: "", email: "", role: "", password: "" });
   const [adding, setAdding] = useState(false);
 
+  // Toast state & timeout ref
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+  const toastTimeoutRef = useRef(null);
+
+  // helper to show toast messages
+  const showToast = (message, type = "success", duration = 3000) => {
+    // clear previous timeout if any
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToast({ show: true, message, type });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast({ show: false, message: "", type });
+      toastTimeoutRef.current = null;
+    }, duration);
+  };
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // ---- FETCH USERS ----
   const fetchUsers = () => {
     fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
@@ -81,21 +108,23 @@ export default function UserPage({ user }) {
             fetchUsers(); // Refresh users
             setFormData({ username: "", email: "", role: "", password: "" });
             setShowAddModal(false);
-            alert("User added successfully.");
+            // show top-right toast instead of alert
+            showToast("User added successfully.", "success");
           } else {
             const msg = data && data.message ? data.message : "Unknown server response";
-            alert("Failed to add user: " + msg);
+            // show toast for error as well
+            showToast("Failed to add user: " + msg, "error");
             console.error("Add user response:", data);
           }
         } catch (err) {
           // not JSON — probably PHP error/stacktrace/HTML
           console.error("Non-JSON response from add user:", text);
-          alert("Server returned unexpected response while adding user. See console.");
+          showToast("Server returned unexpected response while adding user. See console.", "error");
         }
       })
       .catch((err) => {
         console.error("Error saving user:", err);
-        alert("Network error while adding user. Check console.");
+        showToast("Network error while adding user. Check console.", "error");
       })
       .finally(() => setAdding(false));
   };
@@ -122,11 +151,15 @@ export default function UserPage({ user }) {
         if (data.success) {
           fetchUsers(); // Refresh users
           setShowEditModal(false);
+          showToast("User updated.", "success");
         } else {
-          alert("Error: " + data.message);
+          showToast("Error: " + data.message, "error");
         }
       })
-      .catch((err) => console.error("Error updating user:", err));
+      .catch((err) => {
+        console.error("Error updating user:", err);
+        showToast("Network error while updating user.", "error");
+      });
   };
 
   // ---- DELETE ----
@@ -143,11 +176,15 @@ export default function UserPage({ user }) {
           if (data.success) {
             fetchUsers(); // Refresh users
             setShowViewModal(false);
+            showToast("User deleted.", "success");
           } else {
-            alert("Error: " + data.message);
+            showToast("Error: " + data.message, "error");
           }
         })
-        .catch((err) => console.error("Error deleting user:", err));
+        .catch((err) => {
+          console.error("Error deleting user:", err);
+          showToast("Network error while deleting user.", "error");
+        });
     }
   };
 
@@ -179,6 +216,13 @@ export default function UserPage({ user }) {
 
   return (
     <div className="dashboard-container">
+      {/* Toast: top-right */}
+      {toast.show && (
+        <div className={`toast ${toast.type}`} role="status" aria-live="polite">
+          {toast.message}
+        </div>
+      )}
+
       {/* Header (matches Dashboard design) */}
       <div className="dashboard-header-bar">
         <h1 className="dashboard-title">User Management</h1>

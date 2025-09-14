@@ -22,6 +22,27 @@ export default function StrandPage({ user }) {
   const [typeFilter, setTypeFilter] = useState("");
 
   const filterRef = useRef(null);
+  const timeoutRef = useRef(null);
+
+  // Confirmation (top-right green toast)
+  const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
+  const showConfirmation = (message, duration = 3000) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setConfirmation({ visible: true, message });
+    timeoutRef.current = setTimeout(() => {
+      setConfirmation({ visible: false, message: "" });
+      timeoutRef.current = null;
+    }, duration);
+  };
+  const hideConfirmation = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setConfirmation({ visible: false, message: "" });
+  };
 
   // ---- FETCH STRANDS ----
   const fetchStrands = async () => {
@@ -37,6 +58,11 @@ export default function StrandPage({ user }) {
 
   useEffect(() => {
     fetchStrands();
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
   }, []);
 
   // ---- HANDLE INPUT ----
@@ -56,6 +82,7 @@ export default function StrandPage({ user }) {
       fetchStrands();
       setFormData({ id: null, strand: "", type: "" });
       setShowAddModal(false);
+      showConfirmation("Strand added successfully");
     } catch (error) {
       console.error("Error adding strand:", error);
     }
@@ -73,6 +100,7 @@ export default function StrandPage({ user }) {
       fetchStrands();
       setFormData({ id: null, strand: "", type: "" });
       setShowEditModal(false);
+      showConfirmation("Changes saved");
     } catch (error) {
       console.error("Error editing strand:", error);
     }
@@ -92,6 +120,7 @@ export default function StrandPage({ user }) {
         });
         await res.json();
         fetchStrands();
+        showConfirmation("Strand deleted");
       } catch (error) {
         console.error("Error deleting strand:", error);
       }
@@ -147,11 +176,12 @@ export default function StrandPage({ user }) {
     a.download = "strands.csv";
     a.click();
     URL.revokeObjectURL(url);
+    showConfirmation("Export started");
   };
 
   // ---- BULK UPLOAD (Simulation) ----
   const handleBulkUpload = () => {
-    alert("Bulk Upload feature not yet implemented.");
+    showConfirmation("Bulk Upload feature not yet implemented.");
   };
 
   // ---- DOWNLOAD TEMPLATE ----
@@ -164,6 +194,7 @@ export default function StrandPage({ user }) {
     a.download = "strand_template.csv";
     a.click();
     URL.revokeObjectURL(url);
+    showConfirmation("Template downloaded");
   };
 
   // ---- CLOSE FILTER ON OUTSIDE CLICK ----
@@ -185,6 +216,46 @@ export default function StrandPage({ user }) {
 
   return (
     <div className="dashboard-container">
+      {/* Confirmation toast (top-right) */}
+      {confirmation.visible && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 1000,
+            background: "#0f9d58",
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 8,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            minWidth: 220,
+            maxWidth: 360,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div style={{ flex: 1, fontSize: 14 }}>{confirmation.message}</div>
+          <button
+            onClick={hideConfirmation}
+            aria-label="Close confirmation"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.9)",
+              fontSize: 16,
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header (Dashboard design) */}
       <div className="dashboard-header-bar">
         <h1 className="dashboard-title">Strand Management</h1>

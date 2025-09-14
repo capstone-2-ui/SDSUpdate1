@@ -162,3 +162,32 @@
 .btn.add { background:#5D3C16; color:#fff; }
 
 @keyframes fadeIn { from { opacity:0; transform: translateY(-20px);} to { opacity:1; transform: translateY(0);} }
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+  font-weight: 500;
+  display: inline-block;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+/* types */
+.toast.success { background: #28a745; }
+.toast.error { background: #dc3545; }
+.toast.info { background: #17a2b8; }
+
+/* optional small responsive tweak */
+@media (max-width: 480px) {
+  .toast { right: 12px; left: 12px; min-width: auto; max-width: none; }
+}

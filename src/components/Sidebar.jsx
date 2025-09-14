@@ -161,23 +161,6 @@ export default function Sidebar({ onLogout, user }) {
           </NavLink>
         ))}
       </nav>
-
-      {/* Footer */}
-      {!collapsed && (
-        <div className="rcc-footer">
-          <div className="rcc-user">
-            <div className="rcc-user-badge">{user?.role}</div>
-            <div className="rcc-user-name">
-              {user?.role === "OSA" ? "Office of Student Affairs" : "Administrator"}
-            </div>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <button className="rcc-logout-btn" onClick={handleLogoutClick}>
-              Logout
-            </button>
-          </div>
-        </div>
-      )}
     </aside>
   );
 }

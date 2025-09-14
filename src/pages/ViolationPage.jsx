@@ -28,6 +28,53 @@ export default function ViolationPage({ user }) {
   const fileInputRef = useRef(null);
   const [uploadProgress, setUploadProgress] = useState(null);
 
+  // --- Toast + top-right confirmation ---
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+  const toastTimeoutRef = useRef(null);
+
+  const [showConfirmationTopRight, setShowConfirmationTopRight] = useState(false);
+  const [confirmationMessageTopRight, setConfirmationMessageTopRight] = useState("");
+  const confirmationTopRightTimeoutRef = useRef(null);
+
+  // helper to show toast messages
+  const showToast = (message, type = "success", duration = 3000) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToast({ show: true, message, type });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast({ show: false, message: "", type });
+      toastTimeoutRef.current = null;
+    }, duration);
+  };
+
+  // helper to show a small confirmation box at top-right
+  const showConfirmationTopRightBox = (message, duration = 3000) => {
+    if (confirmationTopRightTimeoutRef.current) {
+      clearTimeout(confirmationTopRightTimeoutRef.current);
+      confirmationTopRightTimeoutRef.current = null;
+    }
+    setConfirmationMessageTopRight(message);
+    setShowConfirmationTopRight(true);
+    confirmationTopRightTimeoutRef.current = setTimeout(() => {
+      setShowConfirmationTopRight(false);
+      confirmationTopRightTimeoutRef.current = null;
+    }, duration);
+  };
+
+  // cleanup on unmount for timeouts
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      if (confirmationTopRightTimeoutRef.current) {
+        clearTimeout(confirmationTopRightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // ---- FETCH VIOLATIONS ----
   const fetchViolations = async () => {
     try {
@@ -62,11 +109,15 @@ export default function ViolationPage({ user }) {
         fetchViolations();
         setFormData({ violation: "", type: "", severity: "" });
         setShowAddModal(false);
+        showToast("Violation added successfully.", "success");
+        showConfirmationTopRightBox("Violation added successfully.");
       } else {
+        showToast(result.message || "Failed to add violation", "error");
         alert(result.message);
       }
     } catch (err) {
       console.error("Error adding violation:", err);
+      showToast("Network error while adding violation.", "error");
     }
   };
 
@@ -83,11 +134,15 @@ export default function ViolationPage({ user }) {
         fetchViolations();
         setFormData({ violation: "", type: "", severity: "" });
         setShowEditModal(false);
+        showToast("Violation updated.", "success");
+        showConfirmationTopRightBox("Violation updated.");
       } else {
+        showToast(result.message || "Failed to update violation", "error");
         alert(result.message);
       }
     } catch (err) {
       console.error("Error editing violation:", err);
+      showToast("Network error while updating violation.", "error");
     }
   };
 
@@ -113,11 +168,15 @@ export default function ViolationPage({ user }) {
         const result = await res.json();
         if (result.success) {
           fetchViolations();
+          showToast("Violation deleted.", "success");
+          showConfirmationTopRightBox("Violation deleted.");
         } else {
+          showToast(result.message || "Failed to delete violation", "error");
           alert(result.message);
         }
       } catch (err) {
         console.error("Error deleting violation:", err);
+        showToast("Network error while deleting violation.", "error");
       }
     }
   };
@@ -169,6 +228,7 @@ export default function ViolationPage({ user }) {
   // ---- CSV EXPORT ----
   const exportToCSV = (data = filteredViolations) => {
     if (!data || data.length === 0) {
+      showToast("No data to export.", "info");
       alert("No data to export.");
       return;
     }
@@ -195,10 +255,10 @@ export default function ViolationPage({ user }) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    showToast("Export started.", "success");
   };
 
   // ---- DOWNLOAD TEMPLATE ----
-  // Copied/adapted from SanctionPage.jsx: creates a small CSV with headers + example row
   const handleDownloadTemplate = () => {
     const template = "Violation,Type,Severity\nExample Violation,Minor,Low";
     const blob = new Blob([template], { type: "text/csv" });
@@ -208,6 +268,7 @@ export default function ViolationPage({ user }) {
     a.download = "violation_template.csv";
     a.click();
     URL.revokeObjectURL(url);
+    showToast("Template downloaded.", "success");
   };
 
   // ---- BULK UPLOAD ----
@@ -252,6 +313,7 @@ export default function ViolationPage({ user }) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".csv")) {
+      showToast("Please upload a CSV file.", "error");
       alert("Please upload a CSV file.");
       return;
     }
@@ -261,6 +323,7 @@ export default function ViolationPage({ user }) {
         const text = ev.target.result;
         const parsed = parseCSV(text);
         if (parsed.length === 0) {
+          showToast("No rows found in CSV.", "info");
           alert("No rows found in CSV.");
           return;
         }
@@ -268,6 +331,7 @@ export default function ViolationPage({ user }) {
         const sample = parsed[0];
         const keys = Object.keys(sample).map((k) => k.toLowerCase());
         if (!keys.includes("violation") || !keys.includes("type") || !keys.includes("severity")) {
+          showToast("CSV missing required columns.", "error");
           alert("CSV must include columns: violation, type, severity (case-insensitive).");
           return;
         }
@@ -299,15 +363,19 @@ export default function ViolationPage({ user }) {
           setUploadProgress({ current: i + 1, total: parsed.length });
         }
         setUploadProgress(null);
-        alert("Bulk upload finished.");
+        // use toast + top-right confirmation instead of alert
+        showToast("Bulk upload finished.", "success");
+        showConfirmationTopRightBox("Bulk upload finished.");
         fetchViolations();
       } catch (err) {
         console.error("Error parsing/uploading CSV:", err);
+        showToast("Failed to process CSV.", "error");
         alert("Failed to process CSV.");
         setUploadProgress(null);
       }
     };
     reader.onerror = () => {
+      showToast("Failed to read file.", "error");
       alert("Failed to read file.");
     };
     reader.readAsText(file);
@@ -351,6 +419,13 @@ export default function ViolationPage({ user }) {
 
   return (
     <div className="dashboard-container">
+      {/* Toast: top-right small non-blocking */}
+      {toast.show && (
+        <div className={`toast ${toast.type}`} role="status" aria-live="polite">
+          {toast.message}
+        </div>
+      )}
+
       {/* Header (Dashboard design) */}
       <div className="dashboard-header-bar">
         <h1 className="dashboard-title">Violation Management</h1>

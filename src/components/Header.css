@@ -1,0 +1,105 @@
+/* filepath: c:\xampp1\htdocs\SDSUpdate1-main\src\components\Header.css */
+
+.app-header {
+  position: absolute; /* absolute inside .main-content */
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0; /* no layout height so it doesn't push content */
+  pointer-events: none; /* allow clicks only on the interactive child */
+  z-index: 30;
+}
+
+/* This area is the interactive piece; allow pointer events here */
+.app-header-right {
+  position: absolute; /* positioned relative to .main-content */
+  top: 50px;          /* tweak this to line-up vertically with your page title */
+  right: 50px;        /* distance from the right edge of the content area */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto; /* re-enable interactions for dropdown */
+}
+
+/* White pill container to match screenshot */
+.header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 8px 20px rgba(31, 41, 55, 0.08);
+  border: 1px solid rgba(0,0,0,0.04);
+  cursor: default;
+  user-select: none;
+}
+
+/* small round logo inside the pill */
+.pill-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+/* user name + role inside the pill */
+.pill-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+  color: #1f2937;
+  margin-right: 4px;
+}
+
+.pill-user-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.pill-user-role {
+  font-size: 11px;
+  color: rgba(31,41,55,0.6);
+}
+
+/* small arrow button that sits inside the pill (transparent style) */
+.pill-toggle {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  color: #374151;
+}
+
+/* dropdown panel (positioned relative to header-right) */
+.header-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  background: white;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 8px 24px rgba(31,41,55,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 160px;
+  z-index: 40;
+}
+
+.header-dropdown-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #111827;
+}
+
+.header-dropdown-item:hover {
+  background: #f3f4f6;
+}

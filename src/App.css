@@ -116,6 +116,8 @@
   flex: 1;
   background-color: #e6d9c6;
   padding: 28px;
+  position: relative;
+  padding-top: 56px; /* Add enough top padding so the page title (e.g. "Dashboard") sits below the pill. Adjust 56px if your title is taller or you want more spacing. */
 }
 
 /* Sidebar Styles */
@@ -268,4 +270,17 @@
 .btn.download,
 .btn.cancel {
   border: 0 !important;
+}
+
+/* hide per-page user controls (we now use Header component) */
+.dashboard-header-bar .user-account,
+.dashboard-header-bar .account-logo,
+.dashboard-header-bar .account-name,
+.dashboard-header-bar .dropdown-icon {
+  display: none;
+}
+
+/* small spacing so content doesn't jump */
+.main-content {
+  padding-top: 6px;
 }
