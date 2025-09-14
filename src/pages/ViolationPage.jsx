@@ -5,7 +5,7 @@ import { FaEdit, FaTrash, FaUserCircle } from "react-icons/fa";
 
 const API_URL = "http://localhost/SDSUpdate1-main/backend/Violation.php"; // change path if needed
 
-export default function ViolationPage() {
+export default function ViolationPage({ user }) {
   const [violations, setViolations] = useState([]);
   const [filteredViolations, setFilteredViolations] = useState([]);
   const [search, setSearch] = useState("");
@@ -124,12 +124,7 @@ export default function ViolationPage() {
 
   // ---- SEARCH ----
   const handleSearch = (e) => {
-    const value = e.target.value.toLowerCase();
-    setSearch(value);
-    const filtered = violations.filter((v) =>
-      (v.violation || "").toLowerCase().includes(value)
-    );
-    setFilteredViolations(filtered);
+    setSearch(e.target.value);
   };
 
   // ---- FILTER ----
@@ -199,6 +194,19 @@ export default function ViolationPage() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // ---- DOWNLOAD TEMPLATE ----
+  // Copied/adapted from SanctionPage.jsx: creates a small CSV with headers + example row
+  const handleDownloadTemplate = () => {
+    const template = "Violation,Type,Severity\nExample Violation,Minor,Low";
+    const blob = new Blob([template], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "violation_template.csv";
+    a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -305,37 +313,160 @@ export default function ViolationPage() {
     reader.readAsText(file);
   };
 
+  // ---- REACTIVE FILTERING (applies immediately when any filter/search changes) ----
+  useEffect(() => {
+    // Start from the full list
+    let result = Array.isArray(violations) ? [...violations] : [];
+
+    // Alphabetical sort if requested
+    if (alphabetical === "az") {
+      result.sort((a, b) => (a.violation || "").localeCompare(b.violation || ""));
+    } else if (alphabetical === "za") {
+      result.sort((a, b) => (b.violation || "").localeCompare(a.violation || ""));
+    }
+
+    // Category filter
+    if (categoryFilter) {
+      result = result.filter((v) => (v.type || "") === categoryFilter);
+    }
+
+    // Severity filter
+    if (severityFilter) {
+      result = result.filter((v) => (v.severity || "") === severityFilter);
+    }
+
+    // Free-text search (applies across violation and type; case-insensitive)
+    const q = (search || "").trim().toLowerCase();
+    if (q) {
+      result = result.filter(
+        (v) =>
+          ((v.violation || "").toString().toLowerCase().includes(q)) ||
+          ((v.type || "").toString().toLowerCase().includes(q)) ||
+          ((v.severity || "").toString().toLowerCase().includes(q))
+      );
+    }
+
+    setFilteredViolations(result);
+  }, [violations, alphabetical, categoryFilter, severityFilter, search]);
+
   return (
-    <div className="violation-container">
-      {/* HEADER WITH USER */}
-      <div className="violation-header">
-        <h2>Violation Management</h2>
-        <div className="user-info">
-          <FaUserCircle className="user-icon" />
-          <span className="username">Admin User</span>
+    <div className="dashboard-container">
+      {/* Header (Dashboard design) */}
+      <div className="dashboard-header-bar">
+        <h1 className="dashboard-title">Violation Management</h1>
+        <div className="user-account">
+          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
+          <span className="dropdown-icon">▾</span>
         </div>
       </div>
 
       {/* CONTROLS */}
-      <div className="violation-controls">
+      <div className="violation-controls" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <input
           type="text"
           placeholder="Search..."
           className="search-input"
           value={search}
           onChange={handleSearch}
+          style={{ flex: "1 1 360px", maxWidth: 325 }}
         />
-        <div className="button-group">
-          <button className="btn primary" onClick={() => setShowAddModal(true)}>+ Add</button>
-          <button className="btn secondary" onClick={handleBulkUploadClick}>Bulk Upload</button>
-          <button className="btn secondary" onClick={() => exportToCSV(filteredViolations)}>Export</button>
-          <button className="btn secondary" onClick={() => setShowFilterModal(true)}>Filter</button>
-        </div>
-        {uploadProgress && (
-          <div style={{ marginLeft: 12 }}>
-            Uploading {uploadProgress.current}/{uploadProgress.total}...
+
+        {/* Buttons + filter dropdown wrapper (anchor for dropdown) */}
+        <div ref={filterRef} style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div className="button-group" style={{ display: "inline-flex", gap: 8 }}>
+            <button className="btn primary" onClick={() => setShowAddModal(true)}>+ Add</button>
+            <button className="btn secondary" onClick={handleBulkUploadClick}>Bulk Upload</button>
+            <button className="btn secondary" onClick={() => exportToCSV(filteredViolations)}>Export</button>
+            <button
+              className="btn secondary"
+              onClick={() => setShowFilterModal((s) => !s)}
+              aria-haspopup="true"
+              aria-expanded={showFilterModal}
+            >
+              Filter
+            </button>
           </div>
-        )}
+
+          {/* Inline upload progress */}
+          {uploadProgress && (
+            <div style={{ marginLeft: 12 }}>
+              Uploading {uploadProgress.current}/{uploadProgress.total}...
+            </div>
+          )}
+
+          {/* Filter dropdown anchored to this wrapper, appears below the button */}
+          {showFilterModal && (
+            <div
+              className="filter-dropdown"
+              role="dialog"
+              aria-label="Filter violations"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                right: 0,
+                zIndex: 200,
+                minWidth: 260,
+                maxWidth: 420,
+                background: "#fff",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                padding: 12,
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Filter</h3>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Alphabetical</label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <label style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={alphabetical === "az"}
+                    onChange={() => setAlphabetical(alphabetical === "az" ? "" : "az")}
+                  />{" "}
+                  A → Z
+                </label>
+                <label style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={alphabetical === "za"}
+                    onChange={() => setAlphabetical(alphabetical === "za" ? "" : "za")}
+                  />{" "}
+                  Z → A
+                </label>
+              </div>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Category</label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                style={{ width: "100%", marginBottom: 8 }}
+              >
+                <option value="">All</option>
+                <option value="Minor">Minor</option>
+                <option value="Major">Major</option>
+              </select>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Severity Level</label>
+              <select
+                value={severityFilter}
+                onChange={(e) => setSeverityFilter(e.target.value)}
+                style={{ width: "100%", marginBottom: 8 }}
+              >
+                <option value="">All</option>
+                <option value="Low">Low</option>
+                <option value="Moderate">Moderate</option>
+                <option value="High">High</option>
+              </select>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+                <button className="btn secondary" onClick={() => setShowFilterModal(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* hidden file input for bulk upload */}
@@ -462,72 +593,16 @@ export default function ViolationPage() {
         </div>
       )}
 
-      {/* ---- FILTER MODAL ---- */}
-      {showFilterModal && (
-        <div className="filter-dropdown" ref={filterRef}>
-          <div className="filter-modal">
-            <h3>Filter</h3>
-            <label>Alphabetical</label>
-            <div>
-              <input
-                type="checkbox"
-                checked={alphabetical === "az"}
-                onChange={() => setAlphabetical(alphabetical === "az" ? "" : "az")}
-              /> Filter by A-Z
-            </div>
-            <div>
-              <input
-                type="checkbox"
-                checked={alphabetical === "za"}
-                onChange={() => setAlphabetical(alphabetical === "za" ? "" : "za")}
-              /> Filter by Z-A
-            </div>
-
-            <label>Category</label>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="">All</option>
-              <option value="Minor">Minor</option>
-              <option value="Major">Major</option>
-            </select>
-
-            <label>Severity Level</label>
-            <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
-              <option value="">All</option>
-              <option value="Low">Low</option>
-              <option value="Moderate">Moderate</option>
-              <option value="High">High</option>
-            </select>
-
-            <div className="modal-actions">
-              <button className="btn secondary" onClick={() => setShowFilterModal(false)}>Cancel</button>
-              <button className="btn primary" onClick={applyFilter}>Apply</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Floating download button bottom-right */}
       <button
-        onClick={() => exportToCSV(filteredViolations)}
-        title="Download CSV"
-        style={{
-          position: "fixed",
-          right: 18,
-          bottom: 18,
-          background: "#007bff",
-          color: "#fff",
-          border: "none",
-          borderRadius: "50%",
-          width: 56,
-          height: 56,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
-          cursor: "pointer",
-          zIndex: 9999,
-          fontSize: 14,
-        }}
+        className="btn primary floating-download"
+        onClick={handleDownloadTemplate}
+        title="Download Template"
+        aria-label="Download Template"
       >
-        ↓
+        Download Template
       </button>
+
     </div>
   );
 }

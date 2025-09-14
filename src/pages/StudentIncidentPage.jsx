@@ -9,7 +9,7 @@ const STRAND_URL = "http://localhost/SDSUpdate1-main/backend/Strand.php";
 const DEPARTMENT_URL = "http://localhost/SDSUpdate1-main/backend/Department.php";
 const INCIDENT_URL = "http://localhost/SDSUpdate1-main/backend/Incident.php"; // <- new
 
-export default function StudentIncidentPage() {
+export default function StudentIncidentPage({ user }) {
   const [students, setStudents] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -559,7 +559,9 @@ export default function StudentIncidentPage() {
         <h1 className="dashboard-title">Student Management</h1>
         <div className="user-account">
           <img src="/RCCLOGO.png" alt="Rcc Logo" className="account-logo" />
-          <span className="account-name">OSA</span>
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
           <span className="dropdown-icon">▾</span>
         </div>
       </div>

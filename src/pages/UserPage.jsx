@@ -178,12 +178,16 @@ export default function UserPage({ user }) {
   );
 
   return (
-    <div className="user-container">
-      <div className="user-header">
-        <h2>User Management</h2>
-        <div className="user-info">
-          <FaUserCircle className="user-icon" />
-          <span className="username">{(user && (user.username || user.email)) || "Admin User"}</span>
+    <div className="dashboard-container">
+      {/* Header (matches Dashboard design) */}
+      <div className="dashboard-header-bar">
+        <h1 className="dashboard-title">User Management</h1>
+        <div className="user-account">
+          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
+          <span className="dropdown-icon">▾</span>
         </div>
       </div>
 

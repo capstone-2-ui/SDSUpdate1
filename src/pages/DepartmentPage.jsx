@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import "./DepartmentPage.css";
 import { FaEdit, FaTrash, FaUserCircle } from "react-icons/fa";
 
-export default function DepartmentPage() {
+export default function DepartmentPage({ user }) {
   const [departments, setDepartments] = useState([]);
   const [filteredDepartments, setFilteredDepartments] = useState([]);
   const [search, setSearch] = useState("");
@@ -105,33 +105,37 @@ export default function DepartmentPage() {
     }
   };
 
-  // ---- SEARCH ----
+  // ---- SEARCH (simplified) ----
   const handleSearch = (e) => {
-    const value = e.target.value.toLowerCase();
-    setSearch(value);
-    const filtered = departments.filter((d) =>
-      d.department.toLowerCase().includes(value)
-    );
-    setFilteredDepartments(filtered);
+    setSearch(e.target.value);
   };
 
-  // ---- FILTER ----
-  const applyFilter = () => {
-    let result = [...departments];
+  // ---- REACTIVE FILTERING (applies immediately when filters/search change) ----
+  useEffect(() => {
+    let result = Array.isArray(departments) ? [...departments] : [];
 
+    // Alphabetical sort
     if (alphabetical === "az") {
-      result.sort((a, b) => a.department.localeCompare(b.department));
+      result.sort((a, b) => (a.department || "").localeCompare(b.department || ""));
     } else if (alphabetical === "za") {
-      result.sort((a, b) => b.department.localeCompare(a.department));
+      result.sort((a, b) => (b.department || "").localeCompare(a.department || ""));
     }
 
+    // Type filter
     if (typeFilter) {
-      result = result.filter((d) => d.type === typeFilter);
+      result = result.filter((d) => (d.type || "") === typeFilter);
+    }
+
+    // Free-text search (department name)
+    const q = (search || "").trim().toLowerCase();
+    if (q) {
+      result = result.filter((d) =>
+        ((d.department || "").toString().toLowerCase()).includes(q)
+      );
     }
 
     setFilteredDepartments(result);
-    setShowFilterModal(false);
-  };
+  }, [departments, alphabetical, typeFilter, search]);
 
   // ---- EXPORT ----
   const handleExport = () => {
@@ -186,41 +190,108 @@ export default function DepartmentPage() {
   }, [showFilterModal]);
 
   return (
-    <div className="department-container">
-      {/* HEADER WITH USER */}
-      <div className="department-header">
-        <h2>Department Management</h2>
-        <div className="user-info">
-          <FaUserCircle className="user-icon" />
-          <span className="username">Admin User</span>
+    <div className="dashboard-container">
+      {/* Header (Dashboard design) */}
+      <div className="dashboard-header-bar">
+        <h1 className="dashboard-title">Department Management</h1>
+        <div className="user-account">
+          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
+          <span className="dropdown-icon">▾</span>
         </div>
       </div>
 
-      {/* CONTROLS */}
-      <div className="department-controls">
+      {/* CONTROLS (search + actions; filter dropdown anchored) */}
+      <div className="department-controls" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <input
           type="text"
           placeholder="Search..."
           className="search-input"
           value={search}
           onChange={handleSearch}
+          style={{ flex: "1 1 360px", maxWidth: 325 }}
         />
-        <div className="button-group">
-          <button className="btn primary" onClick={() => setShowAddModal(true)}>
-            + Add
-          </button>
-          <button className="btn secondary" onClick={handleBulkUpload}>
-            Bulk Upload
-          </button>
-          <button className="btn secondary" onClick={handleExport}>
-            Export
-          </button>
-          <button
-            className="btn secondary"
-            onClick={() => setShowFilterModal(true)}
-          >
-            Filter
-          </button>
+
+        <div ref={filterRef} style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div className="button-group" style={{ display: "inline-flex", gap: 8 }}>
+            <button className="btn primary" onClick={() => setShowAddModal(true)}>
+              + Add
+            </button>
+            <button className="btn secondary" onClick={handleBulkUpload}>
+              Bulk Upload
+            </button>
+            <button className="btn secondary" onClick={handleExport}>
+              Export
+            </button>
+            <button
+              className="btn secondary"
+              onClick={() => setShowFilterModal((s) => !s)}
+              aria-haspopup="true"
+              aria-expanded={showFilterModal}
+            >
+              Filter
+            </button>
+          </div>
+
+          {/* Filter dropdown anchored to this wrapper, appears below the Filter button */}
+          {showFilterModal && (
+            <div
+              className="filter-dropdown"
+              role="dialog"
+              aria-label="Department filters"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                right: 0,
+                zIndex: 200,
+                minWidth: 260,
+                maxWidth: 420,
+                background: "#fff",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                padding: 12,
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Filter</h3>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Alphabetical</label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <label style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={alphabetical === "az"}
+                    onChange={() => setAlphabetical(alphabetical === "az" ? "" : "az")}
+                  />{" "}
+                  A → Z
+                </label>
+                <label style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={alphabetical === "za"}
+                    onChange={() => setAlphabetical(alphabetical === "za" ? "" : "za")}
+                  />{" "}
+                  Z → A
+                </label>
+              </div>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Type</label>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                style={{ width: "100%", marginBottom: 8 }}
+              >
+                <option value="">All</option>
+                <option value="Student">Student</option>
+                <option value="Faculty">Faculty</option>
+              </select>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+                <button className="btn secondary" onClick={() => setShowFilterModal(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -335,58 +406,6 @@ export default function DepartmentPage() {
               </button>
               <button className="btn add" onClick={handleEdit}>
                 Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- FILTER MODAL ---- */}
-      {showFilterModal && (
-        <div className="filter-dropdown" ref={filterRef}>
-          <div className="filter-modal">
-            <h3>Filter</h3>
-            <label>Alphabetical</label>
-            <div>
-              <input
-                type="checkbox"
-                checked={alphabetical === "az"}
-                onChange={() =>
-                  setAlphabetical(alphabetical === "az" ? "" : "az")
-                }
-              />{" "}
-              Sort A-Z
-            </div>
-            <div>
-              <input
-                type="checkbox"
-                checked={alphabetical === "za"}
-                onChange={() =>
-                  setAlphabetical(alphabetical === "za" ? "" : "za")
-                }
-              />{" "}
-              Sort Z-A
-            </div>
-
-            <label>Type</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-            >
-              <option value="">All</option>
-              <option value="Academic">Academic</option>
-              <option value="Non-Academic">Non-Academic</option>
-            </select>
-
-            <div className="modal-actions">
-              <button
-                className="btn secondary"
-                onClick={() => setShowFilterModal(false)}
-              >
-                Cancel
-              </button>
-              <button className="btn primary" onClick={applyFilter}>
-                Apply
               </button>
             </div>
           </div>

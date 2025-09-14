@@ -212,6 +212,16 @@
     border-radius: 6px;
 }
 
+/* Filter modal title background (brown) */
+.filter-dropdown h3 {
+  background: #5D3C16;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+}
+
 /* ===================================== */
 /* MODAL OVERLAY (common for Add & Edit) */
 /* ===================================== */
@@ -308,6 +318,40 @@
 
 .btn.add:hover {
     background: #4a3012;
+}
+
+/* Floating download button that reuses .btn styles */
+.floating-download {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  border-radius: 28px; /* pill shape to fit text */
+  height: 32px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  font-size: 14px;
+  z-index: 9999;
+  line-height: 1;
+}
+
+/* If .btn.primary adds big padding, ensure the circular/pill shape keeps correct sizing */
+.floating-download.btn {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* Responsive smaller size on narrow viewports */
+@media (max-width: 480px) {
+  .floating-download {
+    right: 12px;
+    bottom: 12px;
+    height: 40px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
 }
 
 /* Animation */

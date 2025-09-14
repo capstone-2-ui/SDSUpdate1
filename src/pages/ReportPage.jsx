@@ -9,7 +9,7 @@ const SECTION_URL = "http://localhost/SDSUpdate1-main/backend/Section.php";
 const STRAND_URL = "http://localhost/SDSUpdate1-main/backend/Strand.php";
 const DEPARTMENT_URL = "http://localhost/SDSUpdate1-main/backend/Department.php";
 
-const ReportPage = () => {
+const ReportPage = ({ user }) => {
   const [filters, setFilters] = useState({
     alphabetical: "",
     disciplinary: "",
@@ -26,6 +26,9 @@ const ReportPage = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewModal, setViewModal] = useState({ open: false, item: null });
+
+  // Search state (new)
+  const [searchQuery, setSearchQuery] = useState("");
 
   // dropdown option sources (fetched)
   const [gradeOptions, setGradeOptions] = useState([]);
@@ -285,6 +288,26 @@ const ReportPage = () => {
       return 0;
     });
 
+  // Determine the list to display: start with filteredReports if filters applied, otherwise use all reports.
+  // Then apply the free-text search (searchQuery) across several fields.
+  const displayedReports = useMemo(() => {
+    const base = hasAppliedFilters ? filteredReports : reports;
+    const q = (searchQuery || "").trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((r) => {
+      return (
+        String(r.student_id || "").toLowerCase().includes(q) ||
+        (r.name || "").toLowerCase().includes(q) ||
+        (r.department || "").toLowerCase().includes(q) ||
+        (r.grade || "").toLowerCase().includes(q) ||
+        (r.section || "").toLowerCase().includes(q) ||
+        (r.violation || "").toLowerCase().includes(q) ||
+        (r.sanction || "").toLowerCase().includes(q) ||
+        (r.status || "").toLowerCase().includes(q)
+      );
+    });
+  }, [reports, filteredReports, hasAppliedFilters, searchQuery]);
+
   const handleExport = () => {
     if (!hasAppliedFilters) {
       alert("Apply filters first to export results.");
@@ -325,9 +348,34 @@ const ReportPage = () => {
   }, [filterOpen]);
 
   return (
-    <div className="report-container">
-      <div className="report-header">
-        <h2>Report Management</h2>
+    <div className="dashboard-container">
+      {/* Header */}
+      <div className="dashboard-header-bar">
+        <h1 className="dashboard-title">Report Management</h1>
+        <div className="user-account">
+          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
+          <span className="dropdown-icon">▾</span>
+        </div>
+      </div>
+
+      <div className="report-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        {/* Search (left) */}
+        <div style={{ flex: "1 1 320px", maxWidth: 360 }}>
+          <input
+            type="search"
+            placeholder="Search by Student ID, name, department, violation..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="report-search-input"
+            aria-label="Search reports"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #ddd" }}
+          />
+        </div>
+
+        {/* Controls (right) */}
         <div
           className="report-controls"
           style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}
@@ -502,10 +550,11 @@ const ReportPage = () => {
           <p>Loading reports...</p>
         ) : (
           <>
-            {!hasAppliedFilters ? (
+            {/* Show table if user has applied filters OR has typed a search query */}
+            {(!hasAppliedFilters && !searchQuery.trim()) ? (
               <div style={{ padding: 24, color: "#444" }}>
                 <strong>No data displayed.</strong>
-                <div style={{ marginTop: 8 }}>Use the Filter button to select criteria — results will display after applying filters.</div>
+                <div style={{ marginTop: 8 }}>Use the Filter button to select criteria — results will display after applying filters. Or type in the search box to search across all reports.</div>
               </div>
             ) : (
               <table className="report-table">
@@ -520,8 +569,8 @@ const ReportPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReports.length > 0 ? (
-                    filteredReports.map((report) => (
+                  {displayedReports.length > 0 ? (
+                    displayedReports.map((report) => (
                       <tr key={report.id} onClick={() => setViewModal({ open: true, item: report })} style={{ cursor: "pointer" }}>
                         <td>{report.student_id || report.id}</td>
                         <td>{report.name || "-"}</td>
@@ -533,7 +582,7 @@ const ReportPage = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="6" className="text-center">No reports found for the selected filters</td>
+                      <td colSpan="6" className="text-center">No reports found for the applied filters / search</td>
                     </tr>
                   )}
                 </tbody>

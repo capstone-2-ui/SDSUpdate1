@@ -143,6 +143,16 @@
     border-radius: 6px;
 }
 
+/* Filter modal title background (brown) */
+.filter-dropdown h3 {
+  background: #5D3C16; /* warm brown */
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+}
+
 /* MODALS (Add/Edit) */
 .modal-overlay {
     position: fixed;

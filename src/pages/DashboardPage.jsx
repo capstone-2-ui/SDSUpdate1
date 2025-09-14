@@ -13,7 +13,7 @@ import {
   CartesianGrid
 } from "recharts";
 
-function DashboardPage() {
+function DashboardPage({ user }) {
   const [sanctionData, setSanctionData] = useState([]);
   const [violationByDept, setViolationByDept] = useState([]);
   const [monthlyViolations, setMonthlyViolations] = useState([]);
@@ -53,7 +53,9 @@ function DashboardPage() {
         <h1 className="dashboard-title">Dashboard</h1>
         <div className="user-account">
           <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
-          <span className="account-name">OSA</span>
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
           <span className="dropdown-icon">▾</span>
         </div>
       </div>

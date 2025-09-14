@@ -141,7 +141,6 @@ function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-              {/* Dashboard and Student Incident are available to ADMIN, OSA and GUEST */}
               <Route
                 path="/dashboard"
                 element={
@@ -154,17 +153,16 @@ function App() {
                 path="/student-incident"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN", "OSA", "GUEST"]}>
-                    <StudentIncidentPage />
+                    <StudentIncidentPage user={user} />
                   </ProtectedRoute>
                 }
               />
 
-              {/* Admin-only routes */}
               <Route
                 path="/violation"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <ViolationPage />
+                    <ViolationPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -172,7 +170,7 @@ function App() {
                 path="/sanction"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <SanctionPage />
+                    <SanctionPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -180,7 +178,7 @@ function App() {
                 path="/department"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <DepartmentPage />
+                    <DepartmentPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -188,7 +186,7 @@ function App() {
                 path="/grade"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <GradePage />
+                    <GradePage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -196,7 +194,7 @@ function App() {
                 path="/section"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <SectionPage />
+                    <SectionPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -204,7 +202,7 @@ function App() {
                 path="/strand"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <StrandPage />
+                    <StrandPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -220,7 +218,7 @@ function App() {
                 path="/report"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <ReportPage />
+                    <ReportPage user={user} />
                   </ProtectedRoute>
                 }
               />
@@ -228,7 +226,7 @@ function App() {
                 path="/incident"
                 element={
                   <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
-                    <IncidentPage />
+                    <IncidentPage user={user} />
                   </ProtectedRoute>
                 }
               />

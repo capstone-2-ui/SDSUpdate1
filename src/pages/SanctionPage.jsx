@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import "./SanctionPage.css";
 import { FaEdit, FaTrash, FaUserCircle } from "react-icons/fa";
 
-export default function SanctionPage() {
+export default function SanctionPage({ user }) {
   const [sanctions, setSanctions] = useState([]);
   const [filteredSanctions, setFilteredSanctions] = useState([]);
   const [search, setSearch] = useState("");
@@ -131,15 +131,47 @@ export default function SanctionPage() {
     }
   };
 
-  // ---- SEARCH ----
+  // ---- SEARCH (simplified) ----
   const handleSearch = (e) => {
-    const value = e.target.value.toLowerCase();
-    setSearch(value);
-    const filtered = sanctions.filter((s) =>
-      s.sanction.toLowerCase().includes(value)
-    );
-    setFilteredSanctions(filtered);
+    setSearch(e.target.value);
   };
+
+  // ---- REACTIVE FILTERING (applies immediately when any filter/search changes) ----
+  useEffect(() => {
+    let result = Array.isArray(sanctions) ? [...sanctions] : [];
+
+    // Alphabetical sort
+    if (alphabetical === "az") {
+      result.sort((a, b) => (a.sanction || "").localeCompare(b.sanction || ""));
+    } else if (alphabetical === "za") {
+      result.sort((a, b) => (b.sanction || "").localeCompare(a.sanction || ""));
+    }
+
+    // Category
+    if (categoryFilter) {
+      result = result.filter((s) => (s.type || "") === categoryFilter);
+    }
+
+    // Offense
+    if (offenseFilter) {
+      result = result.filter((s) => (s.offense || "") === offenseFilter);
+    }
+
+    // Severity
+    if (severityFilter) {
+      result = result.filter((s) => (s.severity || "") === severityFilter);
+    }
+
+    // Free-text search (sanction name)
+    const q = (search || "").trim().toLowerCase();
+    if (q) {
+      result = result.filter((s) =>
+        (s.sanction || "").toString().toLowerCase().includes(q)
+      );
+    }
+
+    setFilteredSanctions(result);
+  }, [sanctions, alphabetical, categoryFilter, offenseFilter, severityFilter, search]);
 
   // ---- FILTER ----
   const applyFilter = () => {
@@ -262,37 +294,111 @@ export default function SanctionPage() {
   }, [showFilterModal]);
 
   return (
-    <div className="sanction-container">
-      {/* HEADER WITH USER */}
-      <div className="sanction-header">
-        <h2>Sanction Management</h2>
-        <div className="user-info">
-          <FaUserCircle className="user-icon" />
-          <span className="username">Admin User</span>
+    <div className="dashboard-container">
+      {/* Header (Dashboard design) */}
+      <div className="dashboard-header-bar">
+        <h1 className="dashboard-title">Sanction Management</h1>
+        <div className="user-account">
+          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
+          <span className="dropdown-icon">▾</span>
         </div>
       </div>
 
-      {/* CONTROLS */}
-      <div className="sanction-controls">
+      {/* CONTROLS (search + actions; filter dropdown anchored) */}
+      <div className="sanction-controls" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <input
           type="text"
           placeholder="Search..."
           className="search-input"
           value={search}
           onChange={handleSearch}
+          style={{ flex: "1 1 360px", maxWidth: 325 }}
         />
-        <div className="button-group">
-          <button className="btn primary" onClick={() => setShowAddModal(true)}>+ Add</button>
-          <button className="btn secondary" onClick={handleBulkUploadClick}>Bulk Upload</button>
-          <input
-            type="file"
-            accept=".csv"
-            ref={fileInputRef}
-            style={{ display: "none" }}
-            onChange={handleBulkUpload}
-          />
-          <button className="btn secondary" onClick={handleExport}>Export</button>
-          <button className="btn secondary" onClick={() => setShowFilterModal(true)}>Filter</button>
+
+        <div ref={filterRef} style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div className="button-group" style={{ display: "inline-flex", gap: 8 }}>
+            <button className="btn primary" onClick={() => setShowAddModal(true)}>+ Add</button>
+            <button className="btn secondary" onClick={handleBulkUploadClick}>Bulk Upload</button>
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={handleBulkUpload}
+            />
+            <button className="btn secondary" onClick={handleExport}>Export</button>
+            <button
+              className="btn secondary"
+              onClick={() => setShowFilterModal((s) => !s)}
+              aria-haspopup="true"
+              aria-expanded={showFilterModal}
+            >
+              Filter
+            </button>
+          </div>
+
+          {/* Filter dropdown anchored to this wrapper, appears below the Filter button */}
+          {showFilterModal && (
+            <div
+              className="filter-dropdown"
+              role="dialog"
+              aria-label="Sanction filters"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)", // appears directly below the wrapper (Filter button)
+                right: 0,
+                zIndex: 200,
+                minWidth: 280,
+                maxWidth: 420,
+                background: "#fff",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                padding: 12,
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Filter</h3>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Alphabetical</label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <label style={{ fontWeight: 400 }}>
+                  <input type="checkbox" checked={alphabetical === "az"} onChange={() => setAlphabetical(alphabetical === "az" ? "" : "az")} /> A → Z
+                </label>
+                <label style={{ fontWeight: 400 }}>
+                  <input type="checkbox" checked={alphabetical === "za"} onChange={() => setAlphabetical(alphabetical === "za" ? "" : "za")} /> Z → A
+                </label>
+              </div>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Category</label>
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ width: "100%", marginBottom: 8 }}>
+                <option value="">All</option>
+                <option value="Minor">Minor</option>
+                <option value="Major">Major</option>
+              </select>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Offense Level</label>
+              <select value={offenseFilter} onChange={(e) => setOffenseFilter(e.target.value)} style={{ width: "100%", marginBottom: 8 }}>
+                <option value="">All</option>
+                <option value="1st">1st</option>
+                <option value="2nd">2nd</option>
+                <option value="3rd">3rd</option>
+              </select>
+
+              <label style={{ display: "block", marginBottom: 6 }}>Severity Level</label>
+              <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} style={{ width: "100%", marginBottom: 8 }}>
+                <option value="">All</option>
+                <option value="Low">Low</option>
+                <option value="Moderate">Moderate</option>
+                <option value="High">High</option>
+              </select>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+                <button className="btn secondary" onClick={() => setShowFilterModal(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -397,50 +503,6 @@ export default function SanctionPage() {
             <div className="modal-footer">
               <button className="btn cancel" onClick={() => setShowEditModal(false)}>Cancel</button>
               <button className="btn confirm" onClick={handleEdit}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- FILTER MODAL ---- */}
-      {showFilterModal && (
-        <div className="filter-dropdown" ref={filterRef}>
-          <div className="filter-modal">
-            <h3>Filter</h3>
-            <label>Alphabetical</label>
-            <div>
-              <input type="checkbox" checked={alphabetical === "az"} onChange={() => setAlphabetical(alphabetical === "az" ? "" : "az")} /> A-Z
-            </div>
-            <div>
-              <input type="checkbox" checked={alphabetical === "za"} onChange={() => setAlphabetical(alphabetical === "za" ? "" : "za")} /> Z-A
-            </div>
-
-            <label>Category</label>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="">All</option>
-              <option value="Minor">Minor</option>
-              <option value="Major">Major</option>
-            </select>
-
-            <label>Offense Level</label>
-            <select value={offenseFilter} onChange={(e) => setOffenseFilter(e.target.value)}>
-              <option value="">All</option>
-              <option value="1st">1st</option>
-              <option value="2nd">2nd</option>
-              <option value="3rd">3rd</option>
-            </select>
-
-            <label>Severity Level</label>
-            <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
-              <option value="">All</option>
-              <option value="Low">Low</option>
-              <option value="Moderate">Moderate</option>
-              <option value="High">High</option>
-            </select>
-
-            <div className="modal-actions">
-              <button className="btn secondary" onClick={() => setShowFilterModal(false)}>Cancel</button>
-              <button className="btn primary" onClick={applyFilter}>Apply</button>
             </div>
           </div>
         </div>

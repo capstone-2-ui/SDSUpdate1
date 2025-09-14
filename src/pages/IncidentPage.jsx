@@ -1,12 +1,23 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import "./IncidentPage.css";
+/*
+  Complete IncidentPage.jsx (ready to replace).
+  - Persists Major Offense steps via MAJOR_API.
+  - Loads persisted steps on mount so they survive refresh.
+  - Clicking "Major Process" opens the next incomplete step; saving a step persists it.
+  - After step saved, the state is updated so clicking Process again proceeds to the next step until all 5 are done.
+  - When all 5 steps saved, the CompletedMajorStepsModal is shown.
+*/
 
-function IncidentPage() {
+function IncidentPage({ user }) {
   const API_BASE = "http://localhost/SDSUpdate1-main/backend/Incident.php";
   const BACKEND_BASE = "http://localhost/SDSUpdate1-main/backend";
 
-  // Sample Students
+  // Major-offense persistence endpoint
+  const MAJOR_API = `${BACKEND_BASE}/MajorOffense.php`;
+
+  // Sample Students (kept for UI)
   const [students] = useState([
     { id: "01", name: "John Doe", dept: "BSIT", year: "III", section: "" },
     { id: "02", name: "Jane Smith", dept: "BSED", year: "II", section: "A" },
@@ -32,7 +43,9 @@ function IncidentPage() {
   // modal: { open, title, content, pos: {left, top} | null, noHeader }
   const [modal, setModal] = useState({ open: false, title: "", content: null, pos: null, noHeader: false });
 
-  // Major workflow tracking (existing)
+  // Major workflow tracking (persisted)
+  // majorSteps: { [studentId]: number_of_completed_steps }
+  // majorData: { [studentId]: { step1: {...}, step2: {...}, ... } }
   const [majorSteps, setMajorSteps] = useState({});
   const [majorData, setMajorData] = useState({});
 
@@ -47,7 +60,8 @@ function IncidentPage() {
       obj.studentId ??
       obj.student?.student_id ??
       obj.student?.id ??
-      undefined
+      obj.id ??
+      ""
     );
   };
 
@@ -80,17 +94,12 @@ function IncidentPage() {
         // helpers: prefer top-level value, then student.*, then common alternate keys
         const pick = (...keys) => {
           for (const k of keys) {
-            if (k == null) continue;
-            // support dotted keys like 'student.firstName' by resolving via studentObj when needed
-            if (k.includes('.') && k.startsWith('student.')) {
-              const kk = k.split('.').slice(1).join('.');
-              if (studentObj[kk] !== undefined) return studentObj[kk];
-            } else if (it[k] !== undefined) return it[k];
+            if (it[k] !== undefined && it[k] !== null && it[k] !== "") return it[k];
+            if (studentObj[k] !== undefined && studentObj[k] !== null && studentObj[k] !== "") return studentObj[k];
           }
           return undefined;
         };
 
-        // simpler explicit fallbacks (more readable)
         const name =
           it.name ??
           it.student_name ??
@@ -140,7 +149,7 @@ function IncidentPage() {
           it.track ??
           "";
 
-        // new: normalize type and offense (supports various backend key names)
+        // normalize type and offense (supports various backend key names)
         const type =
           it.type ??
           it.violation_type ??
@@ -167,7 +176,6 @@ function IncidentPage() {
 
         return {
           ...it,
-          // ensure these top-level keys exist for consistent rendering
           name,
           department,
           grade,
@@ -175,7 +183,6 @@ function IncidentPage() {
           section,
           strand,
           student_id,
-          // include normalized type/offense so later UI can always read them
           type,
           offense,
         };
@@ -254,6 +261,70 @@ function IncidentPage() {
       return { success: false, message: err.message };
     }
   };
+
+  // Save a major offense step to backend and update local state
+  const saveMajorStep = async (studentId, stepNumber, dataObj) => {
+    if (!studentId) return { success: false, message: "No student id" };
+    const sid = String(studentId);
+    try {
+      const payload = {
+        student_id: sid,
+        step: stepNumber,
+        data: dataObj,
+      };
+      const res = await fetch(MAJOR_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        const updatedData = json.data || {};
+        setMajorData((prev) => ({ ...prev, [sid]: updatedData }));
+        const completed = Number(json.completed_steps || 0);
+        setMajorSteps((prev) => ({ ...prev, [sid]: completed }));
+        return { success: true, data: updatedData, completedSteps: completed };
+      } else {
+        console.error("Failed to save major step:", json);
+        return { success: false, message: json?.message || "Save failed" };
+      }
+    } catch (err) {
+      console.error("Error saving major step:", err);
+      return { success: false, message: err.message };
+    }
+  };
+
+  // Load persisted major-offense records (so completed steps survive refresh)
+  useEffect(() => {
+    const loadMajors = async () => {
+      try {
+        const res = await fetch(MAJOR_API);
+        const json = await res.json();
+        if (!json || !json.success) {
+          setMajorData({});
+          setMajorSteps({});
+          return;
+        }
+        const records = json.records || [];
+        const md = {};
+        const ms = {};
+        records.forEach((r) => {
+          const sid = String(r.student_id);
+          md[sid] = r.data || {};
+          ms[sid] = Number(r.completed_steps || 0);
+        });
+        setMajorData(md);
+        setMajorSteps(ms);
+      } catch (err) {
+        console.error("Failed to load major offense records:", err);
+        setMajorData({});
+        setMajorSteps({});
+      }
+    };
+
+    loadMajors();
+    // only run on mount
+  }, []);
 
   // Bulk Upload
   const handleBulkUpload = (event) => {
@@ -387,7 +458,6 @@ function IncidentPage() {
             <h3>{student.name}</h3>
 
             <p><b>ID:</b> {student.student_id ?? student.id}</p>
-            {/* show email if present */}
             { (student.email || student.parentEmail) && <p><b>Email:</b> {student.email ?? student.parentEmail}</p> }
 
             <p><b>Department:</b> {student.department || student.dept || "-"}</p>
@@ -396,14 +466,11 @@ function IncidentPage() {
             <p><b>Year:</b> {student.year ?? "-"}</p>
             <p><b>Section:</b> {student.section ?? "-"}</p>
 
-            {/* NEW: display Type of violation and Number of offense */}
             <p><b>Type of Violation:</b> { (student.type ?? student.violation_type ?? student.violationType) ? (student.type ?? student.violation_type ?? student.violationType) : "-" }</p>
             <p><b>Number of Offense:</b> {
-              // If offense is the special "Major" choice, show Major.
               ( (student.offense === "Major" || (student.type && String(student.type).toLowerCase() === "major")) ? "Major" : (student.offense ?? "-") )
             }</p>
 
-            {/* incident-specific fields (if present) */}
             {student.violation && <p><b>Violation:</b> {student.violation}</p>}
             {student.sanction && <p><b>Sanction:</b> {student.sanction}</p>}
           </div>
@@ -436,8 +503,11 @@ function IncidentPage() {
               initial={initial}
               onSave={async (updated) => {
                 const res = await updateIncident(updated);
-                if (res.success) setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
-                else alert("Update failed: " + (res.message || ""));
+                if (res.success) {
+                  setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                } else {
+                  alert("Failed to update incident: " + (res.message || "unknown"));
+                }
               }}
               onCancel={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
             />
@@ -458,8 +528,11 @@ function IncidentPage() {
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={async () => {
                   const res = await deleteIncident(student.id);
-                  if (res.success) setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
-                  else alert("Delete failed: " + (res.message || ""));
+                  if (res.success) {
+                    setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                  } else {
+                    alert("Failed to delete: " + (res.message || "unknown"));
+                  }
                 }}>Delete</button>
                 <button onClick={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}>Cancel</button>
               </div>
@@ -471,27 +544,16 @@ function IncidentPage() {
 
       case "Process": {
         // use MajorOffenseModal; hide the redundant outer header
-        const lastSaved = majorSteps[student.id] || 0;
-        const studentSavedData = majorData[student.id] || {};
-
-        // warn if not a Major-type and nothing saved yet
-        if ((student.type || student.violation || "").toLowerCase() !== "major" && (formData.type !== "Major")) {
-          if (!lastSaved) {
-            setModal({ open: true, title: action, content: <p>Please set the violation type to <b>Major</b> first to start the process.</p>, pos: null, noHeader: false });
-            break;
-          }
-        }
+        const sidRaw = getCanonicalStudentId(student) || student.id || "";
+        const sid = String(sidRaw);
+        const lastSaved = majorSteps[sid] || 0;
+        const studentSavedData = majorData[sid] || {};
 
         // If all steps already completed, show a modal summarizing all 5 steps
         if (lastSaved >= 5) {
           setModal({
             open: true,
-            title: (
-              <div className="modal-header-flex">
-                <span>Process - Completed</span>
-                <span className="student-name-brown">{student.name}</span>
-              </div>
-            ),
+            title: "Completed Major Process",
             pos: null,
             noHeader: false,
             content: (
@@ -502,6 +564,7 @@ function IncidentPage() {
               />
             ),
           });
+          setMenuOpenIndex(null);
           break;
         }
 
@@ -516,23 +579,72 @@ function IncidentPage() {
             <MajorOffenseModal
               step={nextStep}
               student={student}
-              savedData={(majorData[student.id] || {})[`step${nextStep}`]}
-              onSave={(stepNumber, dataObj) => {
-                setMajorData((prev) => {
-                  const prevForStudent = prev[student.id] || {};
-                  return {
-                    ...prev,
-                    [student.id]: {
-                      ...prevForStudent,
-                      [`step${stepNumber}`]: dataObj,
-                    },
-                  };
-                });
-                setMajorSteps((prev) => ({
-                  ...prev,
-                  [student.id]: Math.max(prev[student.id] || 0, stepNumber),
-                }));
-                setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+              savedData={studentSavedData[`step${nextStep}`] || {}}
+              onSave={async (stepNumber, dataObj) => {
+                // persist to backend
+                const res = await saveMajorStep(sid, stepNumber, dataObj);
+                if (res.success) {
+                  // if the save completed all steps, show the completed summary
+                  if (res.completedSteps >= 5) {
+                    setModal({
+                      open: true,
+                      title: "Completed Major Process",
+                      pos: null,
+                      noHeader: false,
+                      content: (
+                        <CompletedMajorStepsModal
+                          student={student}
+                          data={res.data}
+                          onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                        />
+                      ),
+                    });
+                  } else {
+                    // advance to next step by reopening modal with incremented step
+                    const newStep = Math.min(stepNumber + 1, 5);
+                    setModal({
+                      open: true,
+                      title: action,
+                      pos: null,
+                      noHeader: true,
+                      content: (
+                        <MajorOffenseModal
+                          step={newStep}
+                          student={student}
+                          savedData={(res.data || {})[`step${newStep}`] || {}}
+                          onSave={async (snum, dobj) => {
+                            const r2 = await saveMajorStep(sid, snum, dobj);
+                            if (r2.success) {
+                              if (r2.completedSteps >= 5) {
+                                setModal({
+                                  open: true,
+                                  title: "Completed Major Process",
+                                  pos: null,
+                                  noHeader: false,
+                                  content: (
+                                    <CompletedMajorStepsModal
+                                      student={student}
+                                      data={r2.data}
+                                      onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                                    />
+                                  ),
+                                });
+                              } else {
+                                // close after saving intermediate step (UX: you could reopen next step)
+                                setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                              }
+                            } else {
+                              alert("Failed to save step: " + (r2.message || "unknown"));
+                            }
+                          }}
+                          onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                        />
+                      ),
+                    });
+                  }
+                } else {
+                  alert("Failed to save step: " + (res.message || "unknown"));
+                }
               }}
               onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
             />
@@ -556,19 +668,70 @@ function IncidentPage() {
   // search state
   const [searchQuery, setSearchQuery] = useState("");
 
-  // derived filtered list
-  const filteredViolations = violations.filter((v) => {
-    const q = (searchQuery || "").trim().toLowerCase();
-    if (!q) return true;
-    return (
-      (String(v.id || "")).toLowerCase().includes(q) ||
-      (v.name || "").toLowerCase().includes(q) ||
-      (v.department || v.dept || "").toLowerCase().includes(q) ||
-      (v.year || "").toLowerCase().includes(q) ||
-      (v.section || "").toLowerCase().includes(q) ||
-      (v.violation || "").toLowerCase().includes(q)
-    );
+  // applied filters from the FilterPopover (alpha, department, grade, section, violation)
+  const [appliedFilters, setAppliedFilters] = useState({
+    alpha: null,
+    department: "",
+    grade: "",
+    section: "",
+    violation: "",
   });
+
+  // derived filtered list (applies both search and appliedFilters)
+  const filteredViolations = (() => {
+    let list = Array.isArray(violations) ? [...violations] : [];
+
+    // text search first (keeps original behavior)
+    const q = (searchQuery || "").trim().toLowerCase();
+    if (q) {
+      list = list.filter((v) => {
+        return (
+          (String(v.id || "")).toLowerCase().includes(q) ||
+          (v.name || "").toLowerCase().includes(q) ||
+          (v.department || v.dept || "").toLowerCase().includes(q) ||
+          (v.year || "").toLowerCase().includes(q) ||
+          (v.section || "").toLowerCase().includes(q) ||
+          (v.violation || "").toLowerCase().includes(q)
+        );
+      });
+    }
+
+    // apply Department filter (case-insensitive match)
+    if (appliedFilters.department) {
+      const df = String(appliedFilters.department).toLowerCase();
+      list = list.filter((v) => (String(v.department ?? v.dept ?? "").toLowerCase() === df));
+    }
+
+    // apply Grade filter (grade/year/level)
+    if (appliedFilters.grade) {
+      const gf = String(appliedFilters.grade).toLowerCase();
+      list = list.filter((v) => {
+        const gradeVal = String(v.grade ?? v.year ?? v.level ?? "").toLowerCase();
+        return gradeVal === gf;
+      });
+    }
+
+    // apply Section filter
+    if (appliedFilters.section) {
+      const sf = String(appliedFilters.section).toLowerCase();
+      list = list.filter((v) => String(v.section ?? v.sec ?? v.section_name ?? "").toLowerCase() === sf);
+    }
+
+    // apply Violation filter
+    if (appliedFilters.violation) {
+      const vf = String(appliedFilters.violation).toLowerCase();
+      list = list.filter((v) => String(v.violation ?? "").toLowerCase() === vf);
+    }
+
+    // alphabetical sort via appliedFilters.alpha (asc / desc)
+    if (appliedFilters.alpha === "asc") {
+      list.sort((a, b) => (String(a.name || a.violation || "").localeCompare(String(b.name || b.violation || ""))));
+    } else if (appliedFilters.alpha === "desc") {
+      list.sort((a, b) => (String(b.name || b.violation || "").localeCompare(String(a.name || a.violation || ""))));
+    }
+
+    return list;
+  })();
 
   return (
     <div className="incident-container">
@@ -579,7 +742,9 @@ function IncidentPage() {
         </h1>
         <div className="user-account">
           <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
-          <span className="account-name">OSA</span>
+          <span className="account-name">
+            {user?.username || user?.email || user?.role || "User"}
+          </span>
           <span className="dropdown-icon">▾</span>
         </div>
       </div>
@@ -738,19 +903,33 @@ function IncidentPage() {
             className="filter-btn"
             onClick={(e) => {
               const anchor = e.currentTarget;
-              if (!anchor) {
+              const openPopover = (pos) => {
                 setModal({
                   open: true,
                   title: "",
                   noHeader: true,
-                  pos: null,
+                  pos,
                   content: (
                     <FilterPopover
-                      onApply={(filters) => { console.log("Filters applied:", filters); setModal({ open: false, title: "", content: null, pos: null, noHeader: false }); }}
+                      onApply={(filters) => {
+                        // apply filters to the page
+                        setAppliedFilters({
+                          alpha: filters.alpha ?? null,
+                          department: filters.department ?? "",
+                          grade: filters.grade ?? "",
+                          section: filters.section ?? "",
+                          violation: filters.violation ?? "",
+                        });
+                        setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                      }}
                       onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
                     />
                   ),
                 });
+              };
+
+              if (!anchor) {
+                openPopover(null);
                 return;
               }
 
@@ -781,21 +960,7 @@ function IncidentPage() {
                 top = Math.max(8 + scrollY, vh - popoverHeight - 8 + scrollY);
               }
 
-              setModal({
-                open: true,
-                title: "",
-                noHeader: true,
-                pos: { left, top },
-                content: (
-                  <FilterPopover
-                    onApply={(filters) => {
-                      console.log("Filters applied:", filters);
-                      setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
-                    }}
-                    onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
-                  />
-                ),
-              });
+              openPopover({ left, top });
             }}
           >
             Filter
@@ -855,7 +1020,7 @@ function IncidentPage() {
                               Edit Violation
                             </button>
                             <button onClick={() => handleMenuAction("Process", v)}>
-                              Process
+                              Major Process
                             </button>
                             <button onClick={() => handleMenuAction("Send Notification", v)}>
                               Send Notification
@@ -937,40 +1102,40 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
     deps: false, grades: false, strands: false, sections: false, violations: false, sanctions: false
   });
 
-// ...existing code...
   // small helper to normalise API responses to {id, name}[]
   const normalizeList = (raw) => {
     if (!raw) return [];
     if (Array.isArray(raw)) {
       return raw.map((it) => {
-        return {
-          // prefer existing id-like fields; add common backend id names (sanction_id, violation_id, strand_id)
-          id:
-            it.id ??
-            it.sanction_id ??
-            it.violation_id ??
-            it.strand_id ??
-            it.department_id ??
-            it.grade_id ??
-            it.section_id ??
-            it.value ??
-            it.code ??
-            it.name ??
-            "",
-          // include many common name fields so endpoints like Sanction.php (sanction),
-          // Violation.php (violation) and Strand.php (strand) are handled transparently.
-          name:
-            it.name ??
-            it.sanction ??
-            it.violation ??
-            it.strand ??
-            it.department ??
-            it.grade ??
-            it.section ??
-            it.label ??
-            it.value ??
-            String(it.id ?? ""),
-        };
+        if (it === null || it === undefined) return { id: "", name: "" };
+        if (typeof it === "string" || typeof it === "number") {
+          const s = String(it);
+          return { id: s, name: s };
+        }
+        const id =
+          it.id ??
+          it.sanction_id ??
+          it.violation_id ??
+          it.strand_id ??
+          it.department_id ??
+          it.grade_id ??
+          it.section_id ??
+          it.value ??
+          it.code ??
+          it.name ??
+          "";
+        const name =
+          it.name ??
+          it.sanction ??
+          it.violation ??
+          it.strand ??
+          it.department ??
+          it.grade ??
+          it.section ??
+          it.label ??
+          it.value ??
+          String(it.id ?? "");
+        return { id, name };
       });
     }
     // If the response is an object with an array property (e.g., { sanctions: [...] }), unwrap it.
@@ -980,7 +1145,6 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
     }
     return [];
   };
-// ...existing code...
 
   // fetch generic endpoint and set state via setter
   const fetchList = async (url, setter, loadingKey) => {
@@ -997,7 +1161,6 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
     }
   };
 
-  // ...existing code...
   // load master dropdowns once
   useEffect(() => {
     // basic master data
@@ -1011,23 +1174,29 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
       setViolationOpts(list);
       // If editing and local has no violation, set a default from backend
       setLocal((p) => {
-        if (p.violation && String(p.violation).trim()) return p;
-        return list.length ? { ...p, violation: p.violation || list[0].name } : p;
+        if (p == null) return p;
+        if (!p.violation || !String(p.violation).trim()) {
+          return list.length ? { ...p, violation: list[0].name } : p;
+        }
+        return p;
       });
     }, "violations");
 
     fetchList(`${BACKEND_BASE}/Sanction.php?action=read`, (list) => {
-    setSanctionOpts(list);
+      setSanctionOpts(list);
       // If editing and local has no sanction, set a default from backend
       setLocal((p) => {
-        if (p.sanction && String(p.sanction).trim()) return p;
-        return list.length ? { ...p, sanction: p.sanction || list[0].name } : p;
+        if (p == null) return p;
+        if (!p.sanction || !String(p.sanction).trim()) {
+          return list.length ? { ...p, sanction: list[0].name } : p;
+        }
+        return p;
       });
     }, "sanctions");
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-// ...existing code...
+
   // load violations & sanctions when type changes (local.type)
   useEffect(() => {
     const t = local.type;
@@ -1037,7 +1206,7 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
       return;
     }
 
-     const q = `?action=read&type=${encodeURIComponent(t)}`;
+    const q = `?action=read&type=${encodeURIComponent(t)}`;
 
     // fetch violations for type
     fetchList(`${BACKEND_BASE}/Violation.php${q}`, (list) => {
@@ -1196,7 +1365,7 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
 }
 
 /* ===========================
-   MajorOffenseModal component (unchanged from earlier)
+   MajorOffenseModal component
    =========================== */
 function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
   const [step1, setStep1] = useState({ incidentReport: savedData?.incidentReport || "" });
@@ -1216,6 +1385,27 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
   });
   const [step4, setStep4] = useState({ sanction: savedData?.sanction || "" });
   const [step5, setStep5] = useState({ decisionApproval: savedData?.decisionApproval || "" });
+
+  useEffect(() => {
+    // whenever savedData changes (when opening modal), sync local states
+    setStep1({ incidentReport: savedData?.incidentReport || "" });
+    setStep2({
+      chairDean: savedData?.chairDean || "",
+      facultyMember: savedData?.facultyMember || "",
+      sscRep: savedData?.sscRep || "",
+      dscRep: savedData?.dscRep || "",
+      guidance: savedData?.guidance || "",
+    });
+    setStep3({
+      complainant: !!savedData?.complainant,
+      respondentPresent: !!savedData?.respondentPresent,
+      parentsPresent: !!savedData?.parentsPresent,
+      witnessTestimonies: !!savedData?.witnessTestimonies,
+      finalStatements: !!savedData?.finalStatements,
+    });
+    setStep4({ sanction: savedData?.sanction || "" });
+    setStep5({ decisionApproval: savedData?.decisionApproval || "" });
+  }, [savedData]);
 
   const renderProgress = (activeIndex) => {
     const dots = [1, 2, 3, 4, 5];
@@ -1354,61 +1544,153 @@ function MajorOffenseModal({ step, student, savedData, onSave, onClose }) {
   );
 }
 
-/* Add FilterPopover component */
+/* ===========================
+   FilterPopover component
+   =========================== */
 function FilterPopover({ onApply, onClose }) {
-  const [alphaAZ, setAlphaAZ] = useState(false);
-  const [alphaZA, setAlphaZA] = useState(false);
-  const [department, setDepartment] = useState("BSIT");
-  const [year, setYear] = useState("");
+  // Keep internal state for all filter controls (no Year)
+  const [alpha, setAlpha] = useState(null); // 'asc' | 'desc' | null
+
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [gradeOptions, setGradeOptions] = useState([]);
+  const [sectionOptions, setSectionOptions] = useState([]);
+  const [violationOptionsLocal, setViolationOptionsLocal] = useState([]);
+
+  const [department, setDepartment] = useState("");
+  const [grade, setGrade] = useState("");
+  const [section, setSection] = useState("");
+  const [violation, setViolation] = useState("");
+
+  // normalize helper: try common shapes returned by endpoints
+  const extractArray = (data) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    // object with array prop
+    const arrKey = Object.keys(data).find((k) => Array.isArray(data[k]));
+    if (arrKey) return data[arrKey];
+    return [];
+  };
+
+  const normalizeLabels = (rawList, candidateFields = ["name", "department", "grade", "section", "violation", "label", "value"]) => {
+    const list = extractArray(rawList);
+    const seen = new Set();
+    const out = [];
+    list.forEach((it) => {
+      if (!it) return;
+      if (typeof it === "string" || typeof it === "number") {
+        const s = String(it).trim();
+        if (s && !seen.has(s)) {
+          seen.add(s);
+          out.push(s);
+        }
+        return;
+      }
+      // object
+      let label = "";
+      for (const f of candidateFields) {
+        if (it[f] !== undefined && it[f] !== null && String(it[f]).trim() !== "") {
+          label = String(it[f]).trim();
+          break;
+        }
+      }
+      if (!label) {
+        const values = Object.values(it).map((v) => (v === null || v === undefined ? "" : String(v))).filter(Boolean);
+        label = values.length ? values[0] : "";
+      }
+      if (label && !seen.has(label)) {
+        seen.add(label);
+        out.push(label);
+      }
+    });
+    return out;
+  };
+
+  useEffect(() => {
+    const BASE = "http://localhost/SDSUpdate1-main/backend";
+
+    const fetchList = async (url, setter, candidateFields) => {
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const labels = normalizeLabels(data, candidateFields);
+        setter(labels);
+      } catch (err) {
+        console.error("Failed to load", url, err);
+        setter([]);
+      }
+    };
+
+    fetchList(`${BASE}/Department.php`, setDepartmentOptions, ["department", "name"]);
+    fetchList(`${BASE}/Grade.php`, setGradeOptions, ["grade", "name"]);
+    fetchList(`${BASE}/Section.php`, setSectionOptions, ["section", "name"]);
+    fetchList(`${BASE}/Violation.php`, setViolationOptionsLocal, ["violation", "name"]);
+  }, []);
+
+  const toggleAlphaAsc = () => setAlpha((v) => (v === "asc" ? null : "asc"));
+  const toggleAlphaDesc = () => setAlpha((v) => (v === "desc" ? null : "desc"));
 
   const apply = () => {
-    onApply({ alphaAZ, alphaZA, department, year });
+    onApply({
+      alpha,
+      department,
+      grade,
+      section,
+      violation,
+    });
   };
 
   return (
-    <div className="filter-popover">
+    <div className="filter-popover" role="dialog" aria-label="Filters">
       <div className="filter-header">Filter</div>
+
       <div className="filter-body">
         <div className="filter-section">
-          <h4>Alphabetical</h4>
-          <label className="filter-item">
-            <input
-              type="checkbox"
-              checked={alphaAZ}
-              onChange={(e) => { setAlphaAZ(e.target.checked); if (e.target.checked) setAlphaZA(false); }}
-            />
-            <span>Filter by A-Z</span>
-          </label>
-          <label className="filter-item">
-            <input
-              type="checkbox"
-              checked={alphaZA}
-              onChange={(e) => { setAlphaZA(e.target.checked); if (e.target.checked) setAlphaAZ(false); }}
-            />
-            <span>Filter by Z-A</span>
-          </label>
-        </div>
-
-        <div className="filter-section">
-          <h4>Department</h4>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} className="filter-select">
-            <option>BSIT</option>
-            <option>BSED</option>
-            <option>BSBA</option>
-          </select>
-        </div>
-
-        <div className="filter-section">
-          <h4>Year Level</h4>
-          <div className="filter-year-grid">
-            <label><input type="radio" name="year" checked={year === "I"} onChange={() => setYear("I")} /> <span>I</span></label>
-            <label><input type="radio" name="year" checked={year === "III"} onChange={() => setYear("III")} /> <span>III</span></label>
-            <label><input type="radio" name="year" checked={year === "II"} onChange={() => setYear("II")} /> <span>II</span></label>
-            <label><input type="radio" name="year" checked={year === "IV"} onChange={() => setYear("IV")} /> <span>IV</span></label>
+          <label className="filter-section-title">Alphabetical</label>
+          <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={alpha === "asc"} onChange={toggleAlphaAsc} />
+              <span>A → Z</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={alpha === "desc"} onChange={toggleAlphaDesc} />
+              <span>Z → A</span>
+            </label>
           </div>
         </div>
 
-        <div className="filter-actions">
+        <div className="filter-section" style={{ marginTop: 12 }}>
+          <label className="filter-section-title">Department</label>
+          <select value={department} onChange={(e) => setDepartment(e.target.value)} className="filter-select">
+            <option value="">All Departments</option>
+            {departmentOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+
+        <div className="filter-section" style={{ marginTop: 12 }}>
+          <label className="filter-section-title">Grade</label>
+          <select value={grade} onChange={(e) => setGrade(e.target.value)} className="filter-select">
+            <option value="">All Grades</option>
+            {gradeOptions.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+
+        <div className="filter-section" style={{ marginTop: 12 }}>
+          <label className="filter-section-title">Section</label>
+          <select value={section} onChange={(e) => setSection(e.target.value)} className="filter-select">
+            <option value="">All Sections</option>
+            {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div className="filter-section" style={{ marginTop: 12 }}>
+          <label className="filter-section-title">Violation</label>
+          <select value={violation} onChange={(e) => setViolation(e.target.value)} className="filter-select">
+            <option value="">All Violations</option>
+            {violationOptionsLocal.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+
+        <div className="filter-actions" style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 10 }}>
           <button className="btn-back" onClick={onClose}>Close</button>
           <button className="btn-primary" onClick={apply}>Apply</button>
         </div>
@@ -1439,12 +1721,12 @@ function CompletedMajorStepsModal({ student, data = {}, onClose }) {
         </div>
 
         <div className="step-card">
-          <div className="step-title">Step 1 — Filing &amp; Investigation</div>
+          <div className="step-title">Filing &amp; Investigation</div>
           <div className="step-body">{s("step1", "incidentReport", "No report saved")}</div>
         </div>
 
         <div className="step-card">
-          <div className="step-title">Step 2 — Committee on Discipline</div>
+          <div className="step-title">Committee on Discipline</div>
           <div className="step-body">
             <div><strong>Chair/Dean:</strong> {s("step2", "chairDean")}</div>
             <div><strong>Faculty Member:</strong> {s("step2", "facultyMember")}</div>
@@ -1455,7 +1737,7 @@ function CompletedMajorStepsModal({ student, data = {}, onClose }) {
         </div>
 
         <div className="step-card">
-          <div className="step-title">Step 3 — Hearing</div>
+          <div className="step-title">Hearing</div>
           <div className="step-body">
             <div><strong>Complainant present:</strong> {s("step3", "complainant")}</div>
             <div><strong>Respondent present:</strong> {s("step3", "respondentPresent")}</div>
@@ -1466,12 +1748,12 @@ function CompletedMajorStepsModal({ student, data = {}, onClose }) {
         </div>
 
         <div className="step-card">
-          <div className="step-title">Step 4 — Sanction</div>
+          <div className="step-title">Sanction</div>
           <div className="step-body">{s("step4", "sanction", "No sanction selected")}</div>
         </div>
 
         <div className="step-card">
-          <div className="step-title">Step 5 — Decision Approval</div>
+          <div className="step-title">Decision Approval</div>
           <div className="step-body">{s("step5", "decisionApproval", "Not recorded")}</div>
         </div>
 
