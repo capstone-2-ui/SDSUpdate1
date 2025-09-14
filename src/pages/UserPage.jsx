@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import "./UserPage.css";
 import { FaEllipsisV, FaUserCircle } from "react-icons/fa";
 
-export default function UserPage() {
+export default function UserPage({ user }) {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -13,13 +13,27 @@ export default function UserPage() {
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [formData, setFormData] = useState({ username: "", email: "", role: "", password: "" });
+  const [adding, setAdding] = useState(false);
 
   // ---- FETCH USERS ----
   const fetchUsers = () => {
-    fetch("http://localhost/SDSUpdate1-main/backend/user.php", { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => setUsers(Array.isArray(data) ? data : []))
-      .catch((err) => console.error("Error fetching users:", err));
+    fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
+      credentials: "include",
+    })
+      .then(async (res) => {
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text || "null");
+          setUsers(Array.isArray(data) ? data : []);
+        } catch (err) {
+          console.error("Failed to parse users response:", text);
+          alert("Failed to load users. See console for response.");
+        }
+      })
+      .catch((err) => {
+        console.error("Error fetching users:", err);
+        alert("Network error while fetching users. Check console.");
+      });
   };
 
   useEffect(() => {
@@ -34,33 +48,74 @@ export default function UserPage() {
   // ---- ADD ----
   const handleAdd = (e) => {
     e.preventDefault();
+    if (adding) return;
+
+    // basic client-side validation
+    if (!formData.email || !formData.password) {
+      alert("Email and password are required.");
+      return;
+    }
+
+    setAdding(true);
+
+    const payload = {
+      username: formData.username || "",
+      email: formData.email || "",
+      password: formData.password || "",
+      role: (formData.role || "").toUpperCase(),
+      action: "add",
+    };
+
     fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...formData, action: "add" }),
-      credentials: 'include',
+      body: JSON.stringify(payload),
+      credentials: "include",
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          fetchUsers(); // Refresh users
-          setFormData({ username: "", email: "", role: "", password: "" });
-          setShowAddModal(false);
-        } else {
-          alert("Error: " + data.message);
+      .then(async (res) => {
+        const text = await res.text();
+        // try parse JSON, otherwise show raw text
+        try {
+          const data = JSON.parse(text || "null");
+          if (data && data.success) {
+            fetchUsers(); // Refresh users
+            setFormData({ username: "", email: "", role: "", password: "" });
+            setShowAddModal(false);
+            alert("User added successfully.");
+          } else {
+            const msg = data && data.message ? data.message : "Unknown server response";
+            alert("Failed to add user: " + msg);
+            console.error("Add user response:", data);
+          }
+        } catch (err) {
+          // not JSON — probably PHP error/stacktrace/HTML
+          console.error("Non-JSON response from add user:", text);
+          alert("Server returned unexpected response while adding user. See console.");
         }
       })
-      .catch((err) => console.error("Error saving user:", err));
+      .catch((err) => {
+        console.error("Error saving user:", err);
+        alert("Network error while adding user. Check console.");
+      })
+      .finally(() => setAdding(false));
   };
 
   // ---- EDIT ----
   const handleEdit = (e) => {
     e.preventDefault();
+
+    const payload = {
+      ...formData,
+      role: (formData.role || "").toUpperCase(),
+      id: selectedUser.id,
+      action: "update",
+    };
+
     fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...formData, id: selectedUser.id, action: "update" }),
-      credentials: 'include',
+      body: JSON.stringify(payload),
+      credentials: "include",
     })
       .then((res) => res.json())
       .then((data) => {
@@ -81,7 +136,7 @@ export default function UserPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: userId, action: "delete" }),
-        credentials: 'include',
+        credentials: "include",
       })
         .then((res) => res.json())
         .then((data) => {
@@ -97,13 +152,19 @@ export default function UserPage() {
   };
 
   // ---- MODAL CONTROLS ----
-  const openViewModal = (user) => {
-    setSelectedUser(user);
+  const openViewModal = (userObj) => {
+    setSelectedUser(userObj);
     setShowViewModal(true);
   };
 
   const openEditModal = () => {
-    setFormData(selectedUser);
+    // map selectedUser fields to formData and clear password input
+    setFormData({
+      username: selectedUser.username || "",
+      email: selectedUser.email || "",
+      role: selectedUser.role || "",
+      password: "",
+    });
     setShowViewModal(false);
     setShowEditModal(true);
   };
@@ -111,9 +172,9 @@ export default function UserPage() {
   // ---- SEARCH ----
   const filteredUsers = users.filter(
     (u) =>
-      u.username.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      u.role.toLowerCase().includes(search.toLowerCase())
+      (u.username || "").toLowerCase().includes(search.toLowerCase()) ||
+      (u.email || "").toLowerCase().includes(search.toLowerCase()) ||
+      (u.role || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -122,7 +183,7 @@ export default function UserPage() {
         <h2>User Management</h2>
         <div className="user-info">
           <FaUserCircle className="user-icon" />
-          <span className="username">Admin User</span>
+          <span className="username">{(user && (user.username || user.email)) || "Admin User"}</span>
         </div>
       </div>
 
@@ -143,18 +204,18 @@ export default function UserPage() {
 
       <div className="cards-grid">
         {filteredUsers.length > 0 ? (
-          filteredUsers.map((user) => (
-            <div key={user.id} className="user-card">
+          filteredUsers.map((userItem) => (
+            <div key={userItem.id} className="user-card">
               <div className="user-card-top">
-                <div className="avatar">{user.username.charAt(0)}</div>
+                <div className="avatar">{(userItem.username || "U").charAt(0)}</div>
                 <div className="user-meta">
-                  <div className="user-name">{user.username}</div>
-                  <div className="user-email">{user.email}</div>
+                  <div className="user-name">{userItem.username}</div>
+                  <div className="user-email">{userItem.email}</div>
                 </div>
               </div>
-              <div className="user-role">{user.role}</div>
+              <div className="user-role">{userItem.role}</div>
               <div className="user-actions">
-                <FaEllipsisV className="icon" onClick={() => openViewModal(user)} />
+                <FaEllipsisV className="icon" onClick={() => openViewModal(userItem)} />
               </div>
             </div>
           ))
@@ -223,6 +284,8 @@ export default function UserPage() {
                 <input type="text" name="username" value={formData.username} onChange={handleInputChange} required />
                 <label>Email</label>
                 <input type="email" name="email" value={formData.email} onChange={handleInputChange} required />
+                <label>Password (leave blank to keep current)</label>
+                <input type="password" name="password" value={formData.password} onChange={handleInputChange} />
                 <label>Role</label>
                 <select name="role" value={formData.role} onChange={handleInputChange} required>
                   <option value="">Select Role</option>

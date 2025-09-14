@@ -4,7 +4,7 @@
     padding: 1.5rem;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     min-height: 100vh;
-    background: #e3cdb8; /* beige background like screenshot */
+    background: none; /* beige background like screenshot */
 }
 
 /* header */
@@ -141,6 +141,10 @@
     grid-column: 1/-1;
     text-align:center;
     color:#5D3C16;
+
+
+
+    
 }
 
 /* filter modal & modals (keep visually similar) */

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 
 import Sidebar from "./components/Sidebar";
 import Login from "./components/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 // Pages
 import DashboardPage from "./pages/DashboardPage";
@@ -21,28 +22,22 @@ import "./App.css";
 
 /*
  Behavior implemented:
- - On cold start (no local flag), app shows Login even if server has a session cookie.
- - When the user successfully logs in, we set a localStorage flag ("sds_logged_in" = "1")
-   and set `user` state. After that, page refreshes will try to restore the session from the
-   server (so the user stays logged in across refreshes).
- - On logout we clear the local flag and user state (and call backend logout if available).
+ - On mount the app always attempts to restore a server-side session by calling backend/login.php
+   with credentials included. While that check is in progress a small loading state is shown.
+ - When the server returns a session the app sets `user` and persists a localStorage flag so refreshes
+   after a login remain logged in.
+ - onLogin keeps the existing behavior (set local flag + user); onLogout clears both.
 */
 
 function App() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const LOCAL_FLAG = "sds_logged_in";
 
-  // On mount: only attempt session restore if the local flag is set.
-  // This prevents automatic restore on cold start (so the Login page is shown first).
+  // On mount: always attempt to restore session from backend
   useEffect(() => {
-    const flagged = localStorage.getItem(LOCAL_FLAG);
-    if (!flagged) {
-      // No client-side login flag — don't restore session automatically.
-      // The app will show Login because `user` remains null.
-      return;
-    }
+    setLoading(true);
 
-    // If flagged, attempt to restore session from backend (server cookie must be present).
     fetch("http://localhost/SDSUpdate1-main/backend/login.php", {
       method: "GET",
       credentials: "include", // send cookies so server can validate session
@@ -55,18 +50,34 @@ function App() {
             role: (data.user.role || "").toUpperCase(),
           };
           setUser(normalizedUser);
+
+          // Persist client-side flag so subsequent refreshes (after login) keep restoring.
+          try {
+            localStorage.setItem(LOCAL_FLAG, "1");
+          } catch (e) {
+            // ignore localStorage errors
+          }
         } else {
-          // server didn't return a session — clear client flag to avoid future auto-restores
-          localStorage.removeItem(LOCAL_FLAG);
+          // No server session: clear client flag and user
+          try {
+            localStorage.removeItem(LOCAL_FLAG);
+          } catch (e) {
+            // ignore
+          }
           setUser(null);
         }
       })
       .catch((err) => {
         console.error("Session restore failed:", err);
-        // network error — keep client flagged (optionally) or remove flag to require re-login
-        // We'll remove the flag to be safe; you can change this to keep the flag if you prefer.
-        localStorage.removeItem(LOCAL_FLAG);
+        try {
+          localStorage.removeItem(LOCAL_FLAG);
+        } catch (e) {
+          // ignore
+        }
         setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
       });
   }, []);
 
@@ -99,7 +110,6 @@ function App() {
     setUser(null);
 
     // OPTIONAL: tell backend to destroy server session if endpoint exists.
-    // It's safe to call even if logout.php is missing; ignore errors.
     fetch("http://localhost/SDSUpdate1-main/backend/logout.php", {
       method: "POST",
       credentials: "include",
@@ -108,21 +118,18 @@ function App() {
     });
   }
 
-  // Protect Admin-only routes
-  function AdminRoute({ element, ...rest }) {
-    const elementWithProps = React.cloneElement(element, { ...rest });
-    return user?.role === "ADMIN" ? elementWithProps : <Navigate to="/dashboard" replace />;
-  }
-
-  // Protect Guest-only routes
-  function GuestRoute({ element }) {
-    return user?.role === "GUEST" ? element : <Navigate to="/dashboard" replace />;
+  // Show loading while restoring session
+  if (loading) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center" }}>
+        <div>Loading...</div>
+      </div>
+    );
   }
 
   return (
     <Router>
       {!user ? (
-        // When user is not set, always render Login as the app root.
         <Routes>
           <Route path="/*" element={<Login onLogin={handleLogin} />} />
         </Routes>
@@ -132,29 +139,100 @@ function App() {
 
           <main className="main-content">
             <Routes>
-              {/* Default redirect */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-              {/* Shared: Admin + OSA */}
-              <Route path="/dashboard" element={<DashboardPage user={user} />} />
-              <Route path="/student-incident" element={<StudentIncidentPage />} />
+              {/* Dashboard and Student Incident are available to ADMIN, OSA and GUEST */}
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN", "OSA", "GUEST"]}>
+                    <DashboardPage user={user} />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/student-incident"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN", "OSA", "GUEST"]}>
+                    <StudentIncidentPage />
+                  </ProtectedRoute>
+                }
+              />
 
-              {/* Admin only routes */}
-              <Route path="/violation" element={<AdminRoute element={<ViolationPage />} />} />
-              <Route path="/sanction" element={<AdminRoute element={<SanctionPage />} />} />
-              <Route path="/department" element={<AdminRoute element={<DepartmentPage />} />} />
-              <Route path="/grade" element={<AdminRoute element={<GradePage />} />} />
-              <Route path="/section" element={<AdminRoute element={<SectionPage />} />} />
-              <Route path="/strand" element={<AdminRoute element={<StrandPage />} />} />
-              <Route path="/user" element={<AdminRoute element={<UserPage onLogout={handleLogout} />} />} />
-              <Route path="/report" element={<AdminRoute element={<ReportPage />} />} />
-              <Route path="/incident" element={<AdminRoute element={<IncidentPage />} />} />
+              {/* Admin-only routes */}
+              <Route
+                path="/violation"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <ViolationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sanction"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <SanctionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/department"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <DepartmentPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/grade"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <GradePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/section"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <SectionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/strand"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <StrandPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/user"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <UserPage user={user} onLogout={handleLogout} />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/report"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <ReportPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/incident"
+                element={
+                  <ProtectedRoute user={user} allowedRoles={["ADMIN"]}>
+                    <IncidentPage />
+                  </ProtectedRoute>
+                }
+              />
 
-              {/* Guest only routes */}
-              <Route path="/dashboard" element={<GuestRoute element={<DashboardPage />} />} />
-              <Route path="/student-incident" element={<GuestRoute element={<StudentIncidentPage />} />} />
-
-              {/* Catch-all */}
               <Route path="*" element={<h2>Page not found</h2>} />
             </Routes>
           </main>

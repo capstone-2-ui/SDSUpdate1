@@ -19,13 +19,14 @@ export default function Login({ onLogin }) {
       headers: {
         "Content-Type": "application/json"
       },
-      credentials: "include", // <--- necessary so browser stores PHP session cookie
+      credentials: "include",
       body: JSON.stringify({ email, password })
     })
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          onLogin({ email: data.user.email, role: data.user.role });
+          // pass back username + email + role so app can display it
+          onLogin({ email: data.user.email, role: data.user.role, username: data.user.username });
           const role = (data.user.role || "").toUpperCase();
           if (role === "ADMIN" || role === "OSA" || role === "GUEST") {
             navigate("/dashboard", { replace: true });

@@ -7,6 +7,7 @@ const GRADE_URL = "http://localhost/SDSUpdate1-main/backend/Grade.php";
 const SECTION_URL = "http://localhost/SDSUpdate1-main/backend/Section.php";
 const STRAND_URL = "http://localhost/SDSUpdate1-main/backend/Strand.php";
 const DEPARTMENT_URL = "http://localhost/SDSUpdate1-main/backend/Department.php";
+const INCIDENT_URL = "http://localhost/SDSUpdate1-main/backend/Incident.php"; // <- new
 
 export default function StudentIncidentPage() {
   const [students, setStudents] = useState([]); 
@@ -32,6 +33,10 @@ export default function StudentIncidentPage() {
   const [sections, setSections] = useState([]);
   const [strands, setStrands] = useState([]);
   const [departments, setDepartments] = useState([]);
+
+  // new: per-student incidents + computed counts
+  const [studentIncidents, setStudentIncidents] = useState([]);
+  const [violationCounts, setViolationCounts] = useState({});
 
   // --- Helper: a simple reload function to keep UI in sync ---
   const reloadStudents = () => {
@@ -295,6 +300,40 @@ export default function StudentIncidentPage() {
 
   const goToIncidentPage = (student) => {
     navigate("/incident", { state: { student } });
+  };
+
+  // Load incidents (from backend/Incident.php) for a particular student and compute counts
+  const loadStudentIncidents = (student) => {
+    const sid = student?.student_id ?? student?.id ?? "";
+    if (!sid) {
+      setStudentIncidents([]);
+      setViolationCounts({});
+      return;
+    }
+
+    fetch(INCIDENT_URL)
+      .then((res) => res.json())
+      .then((data) => {
+        // Incident.php returns an array of rows in the simple case.
+        // If API wraps with { success:..., data: [...] } handle that too.
+        const rows = Array.isArray(data) ? data : (data.data || []);
+        // Filter rows that match this student's id (string-safe compare)
+        const studentRows = rows.filter((r) => String(r.student_id) === String(sid) || String(r.id) === String(sid));
+        setStudentIncidents(studentRows);
+
+        // Group by 'violation' (fallback to 'type' or 'Unknown')
+        const counts = studentRows.reduce((acc, r) => {
+          const key = (r.violation && r.violation.trim()) || (r.type && r.type.trim()) || "Unknown";
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {});
+        setViolationCounts(counts);
+      })
+      .catch((err) => {
+        console.error("Error loading incidents for student:", err);
+        setStudentIncidents([]);
+        setViolationCounts({});
+      });
   };
 
   // 🔍 Filtering
@@ -920,6 +959,6 @@ export default function StudentIncidentPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
   );
 }

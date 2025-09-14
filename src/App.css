@@ -105,113 +105,6 @@
   background-color: #d2a56a;
   color: #000;
 }
-.rcc-sidebar {
-  width: 260px;
-  background-color: #5b3d1e;
-  color: white;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 20px;
-  min-height: 100vh;
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
-}
-
-.rcc-brand {
-  display: flex;
-  align-items: center;
-  margin-bottom: 30px;
-}
-
-.rcc-logo-svg {
-  width: 40px;
-  height: 40px;
-  fill: #fff;
-}
-
-.rcc-brand-text {
-  margin-left: 10px;
-}
-
-.rcc-title {
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.rcc-subtitle {
-  font-size: 14px;
-}
-
-.rcc-nav {
-  flex-grow: 1;
-}
-
-.rcc-nav-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 15px;
-  color: white;
-  text-decoration: none;
-  border-radius: 8px;
-  margin-bottom: 10px;
-  transition: background-color 0.2s;
-}
-
-.rcc-nav-item:hover {
-  background-color: #8c6239;
-}
-
-.rcc-nav-item.active {
-  background-color: #d2a56a;
-  color: #000;
-}
-
-.rcc-icon {
-  margin-right: 10px;
-  font-size: 14px;
-}
-
-.rcc-label {
-  font-size: 14px;
-}
-
-.rcc-footer {
-  margin-top: auto;
-}
-
-.rcc-user {
-  margin-bottom: 10px;
-}
-
-.rcc-user-badge {
-  background-color: #d2a56a;
-  color: #000;
-  padding: 6px 12px;
-  border-radius: 12px;
-  font-weight: bold;
-  display: inline-block;
-  margin-bottom: 4px;
-}
-
-.rcc-user-name {
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.rcc-logout-btn {
-  background-color: #a4702d;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  width: 100%;
-}
-
-.rcc-logout-btn:hover {
-  background-color: #d2a56a;
-  color: #000;
-}
 
 /* App Layout */
 .app-container {
@@ -334,13 +227,45 @@
   color: #000;
 }
 
-.app-container {
-  display: flex;
-  min-height: 100vh;
+/* Global override — make all .btn variants the same brown as the "Add" button */
+.btn,
+.btn.primary,
+.btn.add,
+.btn.bulk,
+.btn.export,
+.btn.filter,
+.btn.view,
+.btn.configure,
+.btn.confirm,
+.btn.download,
+.btn.cancel {
+  background: #5d3c16 !important; /* main brown */
+  color: #fff !important;
+  border: none !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
 }
 
-.main-content {
-  flex: 1;
-  background-color: #e6d9c6;
-  padding: 28px;
+/* Hover state */
+.btn:hover,
+.btn.primary:hover,
+.btn.add:hover,
+.btn.bulk:hover,
+.btn.export:hover,
+.btn.filter:hover,
+.btn.view:hover,
+.btn.configure:hover,
+.btn.confirm:hover,
+.btn.download:hover,
+.btn.cancel:hover {
+  background: #8c6239 !important;
+  color: #fff !important;
+}
+
+/* If some buttons rely on an outline or border, ensure consistency */
+.btn.download,
+.btn.cancel {
+  border: 0 !important;
 }

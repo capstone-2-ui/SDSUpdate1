@@ -281,9 +281,11 @@
 
 .radio-group-horizontal {
   display: flex;
-  justify-content: space-between; /* spreads them evenly */
+  gap: 16px;
   align-items: center;
-  gap: 20px; /* spacing between buttons */
+  justify-content: flex-start; /* left align like the screenshot */
+  flex-wrap: nowrap; /* prevent wrapping to multiple lines */
+  margin: 6px 0 12px 0;
 }
 
 .radio-option {
@@ -348,8 +350,8 @@
 /* MODAL BOX (new design for Add/Edit) */
 .modal-box {
     background: #fff;
-    width: 500px; /* Increased width for student form */
-    max-width: 90%;
+    width: 800px; /* was 500px — increased so the add modal is wider */
+    max-width: 95%; /* slightly larger max-width for smaller screens */
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2);
@@ -388,7 +390,9 @@
 
 .modal-body input,
 .modal-body select {
-    padding: 0.6rem; /* Increased padding */
+    width: 100%;
+    box-sizing: border-box; /* prevents overflow from padding */
+    padding: 0.6rem;
     border: 1px solid #ccc;
     border-radius: 6px;
     font-size: 0.95rem; /* Larger font */
@@ -440,18 +444,5 @@
 }
 .modal-footer .btn.delete:hover {
     background-color: #a12020;
-}
-
-
-/* Animation */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 

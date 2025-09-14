@@ -137,7 +137,7 @@ function DashboardPage() {
             <LineChart data={monthlyViolations}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis allowDecimals={false} />
+              <YAxis allowDecimals={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]} />
               <Tooltip />
               <Line type="monotone" dataKey="total" stroke="#8884d8" />
             </LineChart>

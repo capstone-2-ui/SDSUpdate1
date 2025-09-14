@@ -4,6 +4,7 @@ import "./IncidentPage.css";
 
 function IncidentPage() {
   const API_BASE = "http://localhost/SDSUpdate1-main/backend/Incident.php";
+  const BACKEND_BASE = "http://localhost/SDSUpdate1-main/backend";
 
   // Sample Students
   const [students] = useState([
@@ -18,6 +19,7 @@ function IncidentPage() {
   const [violations, setViolations] = useState([]); // incidents list
   const [violationOptions, setViolationOptions] = useState([]); // backend violations for selected Type
   const [sanctionOptions, setSanctionOptions] = useState([]); // backend sanctions for selected Type
+  const [strandOptions, setStrandOptions] = useState([]); // backend strands
 
   const [formData, setFormData] = useState({
     type: "",
@@ -138,6 +140,22 @@ function IncidentPage() {
           it.track ??
           "";
 
+        // new: normalize type and offense (supports various backend key names)
+        const type =
+          it.type ??
+          it.violation_type ??
+          it.violationType ??
+          studentObj.type ??
+          "";
+
+        const offense =
+          it.offense ??
+          it.offence ??
+          it.offense_number ??
+          it.offenseLevel ??
+          studentObj.offense ??
+          "1st";
+
         const student_id =
           it.student_id ??
           it.studentId ??
@@ -157,6 +175,9 @@ function IncidentPage() {
           section,
           strand,
           student_id,
+          // include normalized type/offense so later UI can always read them
+          type,
+          offense,
         };
       });
 
@@ -374,6 +395,13 @@ function IncidentPage() {
             <p><b>Strand:</b> {student.strand ??"-"}</p>
             <p><b>Year:</b> {student.year ?? "-"}</p>
             <p><b>Section:</b> {student.section ?? "-"}</p>
+
+            {/* NEW: display Type of violation and Number of offense */}
+            <p><b>Type of Violation:</b> { (student.type ?? student.violation_type ?? student.violationType) ? (student.type ?? student.violation_type ?? student.violationType) : "-" }</p>
+            <p><b>Number of Offense:</b> {
+              // If offense is the special "Major" choice, show Major.
+              ( (student.offense === "Major" || (student.type && String(student.type).toLowerCase() === "major")) ? "Major" : (student.offense ?? "-") )
+            }</p>
 
             {/* incident-specific fields (if present) */}
             {student.violation && <p><b>Violation:</b> {student.violation}</p>}
@@ -594,7 +622,6 @@ function IncidentPage() {
               <option value="Select">Select</option>
               <option value="1st">1st</option>
               <option value="2nd">2nd</option>
-              <option value="3rd">3rd</option>
               <option value="Major">Major</option>
             </select>
           </div>
@@ -895,32 +922,274 @@ function EditIncidentForm({ initial, onSave, onCancel }) {
     setLocal({ ...initial });
   }, [initial]);
 
+  // Backend base (kept local to the component so this snippet can be pasted without other edits)
+  const BACKEND_BASE = "http://localhost/SDSUpdate1-main/backend";
+
+  // Dropdown option states
+  const [departments, setDepartments] = useState([]);
+  const [grades, setGrades] = useState([]);
+  const [strands, setStrands] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [violationOpts, setViolationOpts] = useState([]);
+  const [sanctionOpts, setSanctionOpts] = useState([]);
+
+  const [loading, setLoading] = useState({
+    deps: false, grades: false, strands: false, sections: false, violations: false, sanctions: false
+  });
+
+// ...existing code...
+  // small helper to normalise API responses to {id, name}[]
+  const normalizeList = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+      return raw.map((it) => {
+        return {
+          // prefer existing id-like fields; add common backend id names (sanction_id, violation_id, strand_id)
+          id:
+            it.id ??
+            it.sanction_id ??
+            it.violation_id ??
+            it.strand_id ??
+            it.department_id ??
+            it.grade_id ??
+            it.section_id ??
+            it.value ??
+            it.code ??
+            it.name ??
+            "",
+          // include many common name fields so endpoints like Sanction.php (sanction),
+          // Violation.php (violation) and Strand.php (strand) are handled transparently.
+          name:
+            it.name ??
+            it.sanction ??
+            it.violation ??
+            it.strand ??
+            it.department ??
+            it.grade ??
+            it.section ??
+            it.label ??
+            it.value ??
+            String(it.id ?? ""),
+        };
+      });
+    }
+    // If the response is an object with an array property (e.g., { sanctions: [...] }), unwrap it.
+    const keys = Object.keys(raw || {});
+    for (const k of keys) {
+      if (Array.isArray(raw[k])) return normalizeList(raw[k]);
+    }
+    return [];
+  };
+// ...existing code...
+
+  // fetch generic endpoint and set state via setter
+  const fetchList = async (url, setter, loadingKey) => {
+    setLoading((s) => ({ ...s, [loadingKey]: true }));
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      setter(normalizeList(data));
+    } catch (err) {
+      console.error("Failed to load", url, err);
+      setter([]); // fallback to empty
+    } finally {
+      setLoading((s) => ({ ...s, [loadingKey]: false }));
+    }
+  };
+
+  // ...existing code...
+  // load master dropdowns once
+  useEffect(() => {
+    // basic master data
+    fetchList(`${BACKEND_BASE}/Department.php`, setDepartments, "deps");
+    fetchList(`${BACKEND_BASE}/Grade.php`, setGrades, "grades");
+    fetchList(`${BACKEND_BASE}/Strand.php`, setStrands, "strands");
+    fetchList(`${BACKEND_BASE}/Section.php`, setSections, "sections");
+
+    // Load full lists for violations & sanctions (no type filter) so edit modal can show backend values immediately
+    fetchList(`${BACKEND_BASE}/Violation.php`, (list) => {
+      setViolationOpts(list);
+      // If editing and local has no violation, set a default from backend
+      setLocal((p) => {
+        if (p.violation && String(p.violation).trim()) return p;
+        return list.length ? { ...p, violation: p.violation || list[0].name } : p;
+      });
+    }, "violations");
+
+    fetchList(`${BACKEND_BASE}/Sanction.php?action=read`, (list) => {
+    setSanctionOpts(list);
+      // If editing and local has no sanction, set a default from backend
+      setLocal((p) => {
+        if (p.sanction && String(p.sanction).trim()) return p;
+        return list.length ? { ...p, sanction: p.sanction || list[0].name } : p;
+      });
+    }, "sanctions");
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+// ...existing code...
+  // load violations & sanctions when type changes (local.type)
+  useEffect(() => {
+    const t = local.type;
+    if (!t) {
+      setViolationOpts([]);
+      setSanctionOpts([]);
+      return;
+    }
+
+     const q = `?action=read&type=${encodeURIComponent(t)}`;
+
+    // fetch violations for type
+    fetchList(`${BACKEND_BASE}/Violation.php${q}`, (list) => {
+      setViolationOpts(list);
+      if (!local.violation && list.length) {
+        setLocal((p) => ({ ...p, violation: list[0].name }));
+      }
+    }, "violations");
+
+    // fetch sanctions for type
+    fetchList(`${BACKEND_BASE}/Sanction.php${q}`, (list) => {
+      setSanctionOpts(list);
+      if (!local.sanction && list.length) {
+        setLocal((p) => ({ ...p, sanction: list[0].name }));
+      }
+    }, "sanctions");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local.type]);
+
+  const handleChange = (key, value) => {
+    setLocal((p) => ({ ...p, [key]: value }));
+  };
+
+  const handleSave = () => {
+    if (!local.violation || !String(local.violation).trim()) {
+      alert("Please enter a Violation description.");
+      return;
+    }
+    // Guarantee an id is present in the payload (backend may use different id key)
+    const payload = { ...local, id: local.id ?? local.incident_id ?? local.incidentId ?? local.student_id ?? local.studentId };
+    onSave(payload);
+  };
+
+  // helper to render options
+  const renderOptions = (list) => {
+    if (!list || list.length === 0) return <option value="">No options</option>;
+    return [
+      <option key="__empty__" value="">Select</option>,
+      ...list.map((o) => <option key={o.id ?? o.name} value={o.name}>{o.name}</option>)
+    ];
+  };
+
   return (
-    <div style={{ padding: 12 }}>
-      <div style={{ display: "grid", gap: 8 }}>
-        <label>
-          Type
-          <select value={local.type} onChange={(e) => setLocal((p) => ({ ...p, type: e.target.value }))}>
+    <div className="edit-incident-form card">
+      <div className="eif-header">
+        <div className="eif-header-left">
+          <div className="avatar">{(local.name || "—").split(" ").map(n => n[0]).slice(0,2).join("") || "S"}</div>
+          <div>
+            <h3 id="edit-incident-title" className="eif-title">{local.name || "Edit Violation"}</h3>
+            <div className="eif-sub">
+              <span className="student-name">{local.name || "—"}</span>
+              <span className="student-id">{local.student_id ?? local.id ?? ""}</span>
+            </div>
+          </div>
+        </div>
+        <div className="eif-header-right">
+          <div className="type-pill">{local.type || "Type: —"}</div>
+        </div>
+      </div>
+
+      <div className="eif-grid">
+        <label className="eif-label">
+          <span className="lbl">Student ID</span>
+          <input className="eif-input" type="text" value={local.student_id ?? local.id ?? ""} readOnly />
+        </label>
+
+        <label className="eif-label">
+          <span className="lbl">Type</span>
+          <select className="eif-input" value={local.type || ""} onChange={(e) => handleChange("type", e.target.value)}>
             <option value="">Select</option>
             <option value="Minor">Minor</option>
             <option value="Major">Major</option>
           </select>
         </label>
 
-        <label>
-          Violation
-          <input type="text" value={local.violation || ""} onChange={(e) => setLocal((p) => ({ ...p, violation: e.target.value }))} />
+        <label className="eif-label">
+          <span className="lbl">Number of Offense</span>
+          <select className="eif-input" value={local.offense ?? ""} onChange={(e) => handleChange("offense", e.target.value)}>
+            <option value="">Select</option>
+            <option value="1st">1st</option>
+            <option value="2nd">2nd</option>
+            <option value="Major">Major</option>
+          </select>
         </label>
 
-        <label>
-          Sanction
-          <input type="text" value={local.sanction || ""} onChange={(e) => setLocal((p) => ({ ...p, sanction: e.target.value }))} />
+        <label className="eif-label">
+          <span className="lbl">Department</span>
+          <select className="eif-input" value={local.department || local.dept || ""} onChange={(e) => handleChange("department", e.target.value)}>
+            { loading.deps ? <option>Loading...</option> : renderOptions(departments) }
+          </select>
         </label>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => onSave(local)}>Save</button>
-          <button onClick={onCancel}>Cancel</button>
-        </div>
+        <label className="eif-label">
+          <span className="lbl">Year</span>
+          <select className="eif-input" value={local.year || local.grade || ""} onChange={(e) => handleChange("year", e.target.value)}>
+            { loading.grades ? <option>Loading...</option> : renderOptions(grades) }
+          </select>
+        </label>
+
+        <label className="eif-label">
+          <span className="lbl">Grade</span>
+          <select className="eif-input" value={local.grade || ""} onChange={(e) => handleChange("grade", e.target.value)}>
+            { loading.grades ? <option>Loading...</option> : renderOptions(grades) }
+          </select>
+        </label>
+
+        <label className="eif-label">
+          <span className="lbl">Strand</span>
+          <select className="eif-input" value={local.strand || ""} onChange={(e) => handleChange("strand", e.target.value)}>
+            { loading.strands ? <option>Loading...</option> : renderOptions(strands) }
+          </select>
+        </label>
+
+        <label className="eif-label">
+          <span className="lbl">Section</span>
+          <select className="eif-input" value={local.section || ""} onChange={(e) => handleChange("section", e.target.value)}>
+            { loading.sections ? <option>Loading...</option> : renderOptions(sections) }
+          </select>
+        </label>
+
+        <label className="eif-label full">
+          <span className="lbl">Violation</span>
+          <select
+            className="eif-input"
+            value={local.violation || ""}
+            onChange={(e) => handleChange("violation", e.target.value)}
+          >
+            { loading.violations ? <option>Loading...</option> : renderOptions(violationOpts) }
+          </select>
+        </label>
+
+        <label className="eif-label full">
+          <span className="lbl">Sanction</span>
+          <select
+            className="eif-input"
+            value={local.sanction || ""}
+            onChange={(e) => handleChange("sanction", e.target.value)}
+          >
+            { loading.sanctions ? <option>Loading...</option> : renderOptions(sanctionOpts) }
+          </select>
+        </label>
+      </div>
+
+      <div className="eif-actions">
+        <button className="btn btn-cancel" onClick={onCancel}>Cancel</button>
+        <button
+          className="btn btn-save"
+          onClick={handleSave}
+          disabled={!local.violation || !String(local.violation).trim()}
+        >
+          Save Changes
+        </button>
       </div>
     </div>
   );
@@ -1102,8 +1371,22 @@ function FilterPopover({ onApply, onClose }) {
       <div className="filter-body">
         <div className="filter-section">
           <h4>Alphabetical</h4>
-          <label className="filter-item"><input type="checkbox" checked={alphaAZ} onChange={(e) => { setAlphaAZ(e.target.checked); if (e.target.checked) setAlphaZA(false); }} /> <span>Filter by A-Z</span></label>
-          <label className="filter-item"><input type="checkbox" checked={alphaZA} onChange={(e) => { setAlphaZA(e.target.checked); if (e.target.checked) setAlphaAZ(false); }} /> <span>Filter by Z-A</span></label>
+          <label className="filter-item">
+            <input
+              type="checkbox"
+              checked={alphaAZ}
+              onChange={(e) => { setAlphaAZ(e.target.checked); if (e.target.checked) setAlphaZA(false); }}
+            />
+            <span>Filter by A-Z</span>
+          </label>
+          <label className="filter-item">
+            <input
+              type="checkbox"
+              checked={alphaZA}
+              onChange={(e) => { setAlphaZA(e.target.checked); if (e.target.checked) setAlphaAZ(false); }}
+            />
+            <span>Filter by Z-A</span>
+          </label>
         </div>
 
         <div className="filter-section">
@@ -1135,7 +1418,7 @@ function FilterPopover({ onApply, onClose }) {
 }
 
 /* ===========================
-   CompletedMajorStepsModal component (newly added)
+   CompletedMajorStepsModal component
    =========================== */
 function CompletedMajorStepsModal({ student, data = {}, onClose }) {
   // Helper to safely read nested fields

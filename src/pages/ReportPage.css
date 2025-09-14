@@ -98,6 +98,19 @@
     vertical-align: middle;
 }
 
+/* Make Export and Filter button SVG icons white */
+.btn.primary .icon,
+.btn.secondary .icon {
+    color: #fff;
+}
+
+/* Ensure SVG shapes inherit currentColor so icons follow the color above */
+.btn .icon,
+.btn .icon * {
+    fill: currentColor;
+    stroke: currentColor;
+}
+
 .edit-icon,
 .delete-icon {
     color: #5D3C16;
