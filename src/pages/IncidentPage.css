@@ -39,15 +39,95 @@
   display: block;
 }
 
+/* Inputs & selects inside the Violation Entry (form-grid)
+   - add a custom dropdown arrow for selects in this grid
+   - use appearance: none so background-image shows consistently
+*/
 .form-grid input,
 .form-grid select {
   width: 100%;
   height: 38px;
   padding: 7px 10px;
   border: 1px solid #aaa;
-  border-radius: none;
+  border-radius: 6px;
   box-sizing: border-box;
   font-size: 14px;
+  background-color: #fff;
+  color: #222;
+  outline: none;
+}
+
+/* specifically style selects in the form-grid to show a dropdown arrow */
+.form-grid select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 36px; /* room for custom arrow */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b5a4a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  cursor: pointer;
+}
+
+/* Select wrapper arrow: works even when select is disabled */
+.form-grid .select-wrap {
+  position: relative;
+}
+
+/* ensure select has room for the arrow and hides native arrow consistently */
+.form-grid .select-wrap select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 100%;
+  padding-right: 42px; /* space for the arrow */
+  background-color: #fff;
+  cursor: pointer;
+}
+
+/* pointer when disabled should still indicate it's not interactive */
+.form-grid .select-wrap select:disabled {
+  cursor: default;
+  opacity: 0.95;
+}
+
+/* the chevron is placed via the wrapper's ::after so it's always visible */
+.form-grid .select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b5a4a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  opacity: 0.98;
+}
+
+/* darker chevron on focus for accessibility */
+.form-grid .select-wrap select:focus + /* sibling selector won't match */,
+.form-grid .select-wrap select:focus ~ /* fallback */,
+.form-grid .select-wrap:focus-within::after {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234a2f12' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  box-shadow: 0 4px 12px rgba(196,155,122,0.12);
+}
+
+/* Keep hover/focus visuals sensible */
+.form-grid input:focus,
+.form-grid select:focus {
+  border-color: #c49b7a;
+  box-shadow: 0 4px 12px rgba(196,155,122,0.12);
+}
+
+/* Small screens: lets selects keep visual padding but not overflow */
+@media (max-width: 420px) {
+  .form-grid select {
+    background-position: right 8px center;
+  }
 }
 
 .add-btn {
@@ -864,5 +944,142 @@
   /* keep existing edit form full-width and let it handle inner spacing */
   width: 100%;
   box-sizing: border-box;
+}
+
+/* === Form sizing & spacing: keep labels above inputs (no overlap) ===
+   Replace previous "Make all input..." block with this.
+*/
+
+:root {
+  --control-height: 44px;            /* preferred control min-height */
+  --control-padding-vertical: 10px;
+  --control-padding-horizontal: 10px;
+  --control-radius: 8px;
+}
+
+/* Top-level Violation Entry (compact controls) — keep fixed height for compact layout */
+.form-grid input,
+.form-grid select {
+  height: 40px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+/* Modal Edit form controls: don't force grid rows — let label + control stack */
+.eif-grid {
+  /* do NOT set grid-auto-rows — allow rows to size automatically */
+  grid-auto-rows: auto;
+}
+
+/* Label spacing — ensure label text sits above the control with clear gap */
+.eif-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;              /* label above input with breathing room */
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* Explicit style for the small label text (title above input) */
+.eif-label .lbl,
+.eif-label > .lbl {
+  margin: 0;
+  color: #111827;        /* dark label text */
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* Modal controls: use min-height (not fixed height) so label + control wrap naturally */
+.eif-input,
+.eif-label.full select.eif-input,
+.eif-label.full textarea,
+.major-modal-step input[type="text"],
+.major-modal-step select,
+.major-modal-step textarea {
+  min-height: var(--control-height);
+  height: auto; /* allow the control to grow if needed */
+  padding: var(--control-padding-vertical) var(--control-padding-horizontal);
+  border-radius: var(--control-radius);
+  box-sizing: border-box;
+  font-size: 14px;
+  color: #222;
+  width: 100%;
+  display: block;
+}
+
+/* Keep textareas taller */
+.eif-label.full textarea,
+.major-modal-step textarea,
+.form-grid textarea {
+  min-height: 100px;
+  height: auto;
+  padding: 10px 12px;
+}
+
+/* Keep selects looking consistent */
+.form-grid select,
+.eif-label.full select.eif-input,
+.major-modal-step select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+}
+
+/* Align buttons to the same visual height */
+.add-btn,
+.controls-right .bulk-upload,
+.controls-right .export-btn,
+.controls-right .filter-btn,
+.bulk-upload,
+.export-btn,
+.download-btn,
+.view-btn {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* For small screens keep modal responsive */
+@media (max-width: 980px) {
+  .form-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .form-grid > div:last-child { grid-column: 1 / -1; }
+  .eif-grid { gap: 12px; }
+}
+
+/* Optional visual polish: matching input borders inside modal */
+.eif-input,
+.form-grid input,
+.form-grid select {
+  border: 1px solid #e4e2e0;
+  background: #fff;
+  color: #222;
+}
+
+/* Add: custom dropdown arrow for modal selects so Violation & Sanction show arrow */
+select.eif-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 40px; /* room for the arrow */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b5a4a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+}
+
+/* optional: change arrow color on focus to match existing focus border */
+select.eif-input:focus {
+  border-color: #c49b7a;
+  box-shadow: 0 4px 12px rgba(196,155,122,0.12);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a2f12' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
 }
 

@@ -513,7 +513,7 @@ export default function ViolationPage({ user }) {
                 </label>
               </div>
 
-              <label style={{ display: "block", marginBottom: 6 }}>Category</label>
+              <label style={{ display: "block", marginBottom: 6 }}>Type</label>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}

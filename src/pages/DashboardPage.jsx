@@ -75,7 +75,10 @@ function DashboardPage({ user }) {
                   cx="50%"
                   cy="50%"
                   outerRadius={80}
-                  label
+                  label={false}
+                  labelLine={false}
+                  stroke="#fff"
+                  strokeWidth={2}
                 >
                   {sanctionData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -90,8 +93,9 @@ function DashboardPage({ user }) {
               {sanctionData.length === 0 && !loading && <li>No sanction data</li>}
               {sanctionData.map((entry, index) => (
                 <li key={index}>
-                  <span className={`dot`} style={{ background: COLORS[index % COLORS.length] }}></span>
-                  {entry.name} — {entry.value}
+                  <span className="dot" style={{ background: COLORS[index % COLORS.length] }}></span>
+                  <span className="legend-name">{entry.name}</span>
+                  <span className="legend-count"> — {entry.value}</span>
                 </li>
               ))}
             </ul>

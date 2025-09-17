@@ -14,7 +14,8 @@ export default function StrandPage({ user }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const [formData, setFormData] = useState({ id: null, strand: "", type: "" });
+  // default type set to "Senior High School"
+  const [formData, setFormData] = useState({ id: null, strand: "", type: "Senior High School" });
   const [editIndex, setEditIndex] = useState(null);
 
   // filter modal states
@@ -23,6 +24,12 @@ export default function StrandPage({ user }) {
 
   const filterRef = useRef(null);
   const timeoutRef = useRef(null);
+
+  // file input + upload states
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ total: 0, success: 0, failed: 0 });
+  const [uploadErrors, setUploadErrors] = useState([]);
 
   // Confirmation (top-right green toast)
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
@@ -80,7 +87,8 @@ export default function StrandPage({ user }) {
       });
       await res.json();
       fetchStrands();
-      setFormData({ id: null, strand: "", type: "" });
+      // reset form and keep default type as Senior High School
+      setFormData({ id: null, strand: "", type: "Senior High School" });
       setShowAddModal(false);
       showConfirmation("Strand added successfully");
     } catch (error) {
@@ -98,7 +106,8 @@ export default function StrandPage({ user }) {
       });
       await res.json();
       fetchStrands();
-      setFormData({ id: null, strand: "", type: "" });
+      // reset form and keep default type as Senior High School
+      setFormData({ id: null, strand: "", type: "Senior High School" });
       setShowEditModal(false);
       showConfirmation("Changes saved");
     } catch (error) {
@@ -179,9 +188,133 @@ export default function StrandPage({ user }) {
     showConfirmation("Export started");
   };
 
-  // ---- BULK UPLOAD (Simulation) ----
+  // ---- BULK UPLOAD (functional) ----
   const handleBulkUpload = () => {
-    showConfirmation("Bulk Upload feature not yet implemented.");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = null;
+      fileInputRef.current.click();
+    } else {
+      showConfirmation("File input not available.");
+    }
+  };
+
+  const parseCSVText = (text) => {
+    if (!text) return { rows: [], error: "Empty file" };
+    // Remove BOM if present
+    if (text.charCodeAt(0) === 0xfeff) {
+      text = text.slice(1);
+    }
+    const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+    if (lines.length === 0) return { rows: [], error: "CSV is empty" };
+
+    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const strandIdx = header.findIndex((h) => h === "strand") >= 0 ? header.findIndex((h) => h === "strand") : 0;
+    const typeIdx = header.findIndex((h) => h === "type") >= 0 ? header.findIndex((h) => h === "type") : 1;
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",").map((c) => c.trim());
+      if (cols.length === 0 || cols.every((c) => c === "")) continue;
+      const strand = cols[strandIdx] || "";
+      const type = cols[typeIdx] || "";
+      rows.push({ strand, type, line: i + 1 });
+    }
+    return { rows };
+  };
+
+  const uploadRowsSequential = async (rows) => {
+    setUploading(true);
+    setUploadProgress({ total: rows.length, success: 0, failed: 0 });
+    setUploadErrors([]);
+
+    const errors = [];
+    let success = 0;
+    let failed = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      // validation: strand required
+      if (!r.strand || r.strand.trim() === "") {
+        failed++;
+        errors.push({ line: r.line, message: "Missing strand value" });
+        setUploadProgress((p) => ({ ...p, success, failed }));
+        continue;
+      }
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strand: r.strand.trim(), type: r.type.trim() }),
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          failed++;
+          errors.push({ line: r.line, message: `Server error: ${text || res.statusText}` });
+        } else {
+          try {
+            const json = text ? JSON.parse(text) : null;
+            if (json && (json.error || json.success === false)) {
+              failed++;
+              errors.push({ line: r.line, message: json.error || JSON.stringify(json) });
+            } else {
+              success++;
+            }
+          } catch {
+            // not JSON, assume success if ok
+            success++;
+          }
+        }
+      } catch (err) {
+        failed++;
+        errors.push({ line: r.line, message: err.message || "Network error" });
+      }
+
+      setUploadProgress({ total: rows.length, success, failed });
+    }
+
+    setUploadErrors(errors);
+    setUploading(false);
+    setUploadProgress({ total: rows.length, success, failed });
+
+    // refresh strands after upload
+    await fetchStrands();
+
+    return { success, failed, errors };
+  };
+
+  const onFileSelected = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      showConfirmation("Please select a CSV file");
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const { rows, error } = parseCSVText(text);
+      if (error) {
+        showConfirmation(error);
+        return;
+      }
+      if (!rows || rows.length === 0) {
+        showConfirmation("CSV contains no data rows");
+        return;
+      }
+
+      const proceed = window.confirm(`Upload ${rows.length} rows? This will create strands for each row.`);
+      if (!proceed) return;
+
+      const result = await uploadRowsSequential(rows);
+      showConfirmation(`Bulk upload finished: ${result.success} added, ${result.failed} failed`, 5000);
+    } catch (err) {
+      console.error("Bulk upload failed:", err);
+      showConfirmation("Bulk upload failed. See console for details.");
+      setUploading(false);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = null;
+    }
   };
 
   // ---- DOWNLOAD TEMPLATE ----
@@ -212,7 +345,7 @@ export default function StrandPage({ user }) {
     }
 
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFilterModal]);
+  }, [showFilterModal]);  
 
   return (
     <div className="dashboard-container">
@@ -301,7 +434,11 @@ export default function StrandPage({ user }) {
           >
             <button
               className="btn primary"
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                // initialize add form with Senior High School selected
+                setFormData({ id: null, strand: "", type: "Senior High School" });
+                setShowAddModal(true);
+              }}
             >
               + Add
             </button>
@@ -408,6 +545,16 @@ export default function StrandPage({ user }) {
         </div>
       </div>
 
+      {/* Hidden file input for bulk upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: "none" }}
+        onChange={onFileSelected}
+        aria-hidden={true}
+      />
+
       {/* TABLE */}
       <div className="strand-table-container">
         <table className="strand-table">
@@ -439,6 +586,64 @@ export default function StrandPage({ user }) {
         </button>
       </div>
 
+      {/* Upload progress modal */}
+      {uploading && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="modal-header">
+              <h3>Uploading...</h3>
+            </div>
+            <div className="modal-body">
+              <p>Uploading {uploadProgress.total} rows</p>
+              <p>
+                Success: {uploadProgress.success} | Failed: {uploadProgress.failed}
+              </p>
+              <div style={{ marginTop: 8 }}>
+                <progress value={uploadProgress.success + uploadProgress.failed} max={Math.max(1, uploadProgress.total)} style={{ width: "100%" }} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn cancel" onClick={() => { /* cancel not implemented */ }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* If upload finished but errors exist, show a modal with errors */}
+      {!uploading && uploadProgress.total > 0 && uploadErrors.length > 0 && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="modal-header">
+              <h3>Upload Results</h3>
+            </div>
+            <div className="modal-body" style={{ maxHeight: "40vh", overflow: "auto" }}>
+              <p>
+                Uploaded: {uploadProgress.success} / {uploadProgress.total} — Failed: {uploadProgress.failed}
+              </p>
+              <ul style={{ paddingLeft: 18 }}>
+                {uploadErrors.slice(0, 50).map((err, idx) => (
+                  <li key={idx}>Line {err.line}: {err.message}</li>
+                ))}
+              </ul>
+              {uploadErrors.length > 50 && <p>...and {uploadErrors.length - 50} more errors</p>}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn cancel"
+                onClick={() => {
+                  setUploadProgress({ total: 0, success: 0, failed: 0 });
+                  setUploadErrors([]);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---- ADD MODAL ---- */}
       {showAddModal && (
         <div className="modal-overlay">
@@ -456,13 +661,13 @@ export default function StrandPage({ user }) {
                 placeholder="Enter Strand"
               />
               <label>Type</label>
-              <input
-                type="text"
+              <select
                 name="type"
                 value={formData.type}
                 onChange={handleInputChange}
-                placeholder="Enter Type"
-              />
+              >
+                <option value="Senior High School">Senior High School</option>
+              </select>
             </div>
             <div className="modal-footer">
               <button className="btn cancel" onClick={() => setShowAddModal(false)}>Cancel</button>
@@ -489,13 +694,15 @@ export default function StrandPage({ user }) {
                 placeholder="Enter Strand"
               />
               <label>Type</label>
-              <input
-                type="text"
+              <select
                 name="type"
                 value={formData.type}
                 onChange={handleInputChange}
-                placeholder="Enter Type"
-              />
+              >
+                <option value="Senior High School">Senior High School</option>
+                <option value="Academic">Academic</option>
+                <option value="Technical-Vocational">Technical-Vocational</option>
+              </select>
             </div>
             <div className="modal-footer">
               <button className="btn cancel" onClick={() => setShowEditModal(false)}>Cancel</button>

@@ -38,6 +38,27 @@ export default function StudentIncidentPage({ user }) {
   const [studentIncidents, setStudentIncidents] = useState([]);
   const [violationCounts, setViolationCounts] = useState({});
 
+  // Confirmation (top-right green toast)
+  const timeoutRef = useRef(null);
+  const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
+  const showConfirmation = (message, duration = 3000) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setConfirmation({ visible: true, message });
+    timeoutRef.current = setTimeout(() => {
+      setConfirmation({ visible: false, message: "" });
+      timeoutRef.current = null;
+    }, duration);
+  };
+  const hideConfirmation = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setConfirmation({ visible: false, message: "" });
+  };
+
   // --- Helper: a simple reload function to keep UI in sync ---
   const reloadStudents = () => {
     fetch(API_URL)
@@ -72,6 +93,16 @@ export default function StudentIncidentPage({ user }) {
       .then((res) => res.json())
       .then((data) => setDepartments(data))
       .catch((err) => console.error("Department fetch error:", err));
+  }, []);
+
+  // ensure timeout cleared on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, []);
 
   // Close filter if clicking outside
@@ -114,6 +145,7 @@ export default function StudentIncidentPage({ user }) {
           reloadStudents();
           setShowAddModal(false);
           setSelectedLevel("");
+          showConfirmation("Student added successfully");
         } else {
           alert("Error adding student: " + (data.error || data.message));
         }
@@ -181,6 +213,7 @@ export default function StudentIncidentPage({ user }) {
           reloadStudents();
           setShowEditModal(false);
           setSelectedStudent(null);
+          showConfirmation("Changes saved");
         } else {
           const msg = data && (data.error || data.message) ? (data.error || data.message) : "Update failed";
           alert("Update failed: " + msg);
@@ -226,7 +259,7 @@ export default function StudentIncidentPage({ user }) {
           reloadStudents();
           setShowViewModal(false);
           setSelectedStudent(null);
-          alert("Student deleted.");
+          showConfirmation("Student deleted");
         } else {
           const msg = data && (data.error || data.message) ? (data.error || data.message) : "Delete failed";
           alert("Delete failed: " + msg);
@@ -254,7 +287,9 @@ export default function StudentIncidentPage({ user }) {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          alert(`Bulk upload complete: ${data.rows_processed} rows, ${data.inserted} added/updated`);
+          const rows = data.rows_processed ?? "N/A";
+          const inserted = data.inserted ?? "N/A";
+          showConfirmation(`Bulk upload complete: ${rows} rows, ${inserted} added/updated`, 5000);
           reloadStudents();
         } else {
           alert("Bulk upload failed: " + (data.error || JSON.stringify(data)));
@@ -284,6 +319,7 @@ export default function StudentIncidentPage({ user }) {
     a.href = url;
     a.download = "students.csv";
     a.click();
+    showConfirmation("Export started");
   };
 
   const handleDownloadTemplate = () => {
@@ -296,9 +332,19 @@ export default function StudentIncidentPage({ user }) {
     a.href = url;
     a.download = "template.csv";
     a.click();
+    showConfirmation("Template downloaded");
   };
 
+  // storage key used to persist selected student (use sessionStorage so it survives refresh in same tab)
+  const STORAGE_KEY = "SDS:selectedStudent";
+
   const goToIncidentPage = (student) => {
+    // Persist selection so Incident page can restore it after refresh
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(student));
+    } catch (err) {
+      console.warn("Failed to persist selected student before navigation:", err);
+    }
     navigate("/incident", { state: { student } });
   };
 
@@ -335,6 +381,35 @@ export default function StudentIncidentPage({ user }) {
         setViolationCounts({});
       });
   };
+
+  // --- NEW: Restore persisted selected student on mount (if any) ---
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSelectedStudent(parsed);
+        // populate incidents/counts for the restored student
+        loadStudentIncidents(parsed);
+      }
+    } catch (err) {
+      console.warn("Failed to restore selected student from sessionStorage:", err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
+
+  // --- NEW: Persist selectedStudent whenever it changes ---
+  useEffect(() => {
+    try {
+      if (selectedStudent) {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(selectedStudent));
+      } else {
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (err) {
+      console.warn("Failed to persist selected student to sessionStorage:", err);
+    }
+  }, [selectedStudent]);
 
   // 🔍 Filtering
   const filteredStudents = useMemo(() => {
@@ -375,54 +450,116 @@ export default function StudentIncidentPage({ user }) {
   }, [students, filterAZ, filterDepartment, filterYear, filterSection, filterGrade, filterStrand, searchTerm]);
 
   // Render fields
-  const renderFields = (level, student = {}) => {
+  const renderFields = (level, student = {}, options = { includeId: true }) => {
+    const includeId = options.includeId !== false;
+
+    // helper: case-insensitive match for level keywords in 'type' fields
+    const isTypeMatch = (typeValue, keyword) => {
+      if (!typeValue && typeValue !== "") return false;
+      return String(typeValue).toLowerCase().includes(keyword.toLowerCase());
+    };
+
+    // derive filtered lists based on level
+    const juniorKeyword = "junior";
+    const seniorKeyword = "senior";
+
+    // if grade objects include a 'type' property, filter them by level; otherwise fallback to full list
+    const juniorGrades = grades && grades.length
+      ? grades.filter((g) => isTypeMatch(g.type ?? g.category ?? "", juniorKeyword))
+      : grades;
+
+    const seniorGrades = grades && grades.length
+      ? grades.filter((g) => isTypeMatch(g.type ?? g.category ?? "", seniorKeyword))
+      : grades;
+
+    // sections: filter by section.type (SectionPage shows sections have a 'type' field)
+    const juniorSections = sections && sections.length
+      ? sections.filter((s) => isTypeMatch(s.type ?? s.category ?? "", juniorKeyword))
+      : sections;
+
+    const seniorSections = sections && sections.length
+      ? sections.filter((s) => isTypeMatch(s.type ?? s.category ?? "", seniorKeyword))
+      : sections;
+
     switch (level) {
       case "junior":
         return (
           <>
-            <label>ID*</label>
-            <input name="id" defaultValue={student.student_id ?? student.id} required />
+            {includeId && (
+              <>
+                <label>
+                  ID<span className="required">*</span>
+                </label>
+                <input name="id" defaultValue={student.student_id ?? student.id} required />
+              </>
+            )}
 
-            <label>Grade*</label>
+            <label>
+              Grade<span className="required">*</span>
+            </label>
             <select name="grade" defaultValue={student.grade} required>
               <option value="">Select Grade</option>
-              {grades.map((g) => (
-                <option key={g.id} value={g.grade}>
-                  {g.grade}
+              {(Array.isArray(juniorGrades) && juniorGrades.length ? juniorGrades : grades).map((g) => (
+                <option key={g.id ?? g.grade} value={g.grade ?? g.name ?? g.id}>
+                  {g.grade ?? g.name ?? g.id}
                 </option>
               ))}
             </select>
 
-
-            <label>Section*</label>
+            <label>
+              Section<span className="required">*</span>
+            </label>
             <select name="section" defaultValue={student.section} required>
               <option value="">Select Section</option>
-              {sections.map((s) => (
-                <option key={s.id} value={s.section}>
-                  {s.section}
+              {(Array.isArray(juniorSections) && juniorSections.length ? juniorSections : sections).map((s) => (
+                <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
+                  {s.section ?? s.name ?? s.id}
                 </option>
               ))}
-            </select> 
+            </select>
           </>
         );
 
       case "senior":
         return (
           <>
-            <label>ID*</label>
-            <input name="id" defaultValue={student.id} required />
+            {includeId && (
+              <>
+                <label>
+                  ID<span className="required">*</span>
+                </label>
+                <input name="id" defaultValue={student.student_id ?? student.id} required />
+              </>
+            )}
 
-            <label>Grade*</label>
+            <label>
+              Grade<span className="required">*</span>
+            </label>
             <select name="grade" defaultValue={student.grade} required>
               <option value="">Select Grade</option>
-              {grades.map((g) => (
-                <option key={g.id} value={g.grade}>
-                  {g.grade}
+              {(Array.isArray(seniorGrades) && seniorGrades.length ? seniorGrades : grades).map((g) => (
+                <option key={g.id ?? g.grade} value={g.grade ?? g.name ?? g.id}>
+                  {g.grade ?? g.name ?? g.id}
                 </option>
               ))}
             </select>
 
-            <label>Strand*</label>
+            {/* Section for Senior (placed below Grade as requested) */}
+            <label>
+              Section<span className="required">*</span>
+            </label>
+            <select name="section" defaultValue={student.section} required>
+              <option value="">Select Section</option>
+              {(Array.isArray(seniorSections) && seniorSections.length ? seniorSections : sections).map((s) => (
+                <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
+                  {s.section ?? s.name ?? s.id}
+                </option>
+              ))}
+            </select>
+
+            <label>
+              Strand<span className="required">*</span>
+            </label>
             <select name="strand" defaultValue={student.strand} required>
               <option value="">Select Strand</option>
               {strands.map((st) => (
@@ -437,20 +574,30 @@ export default function StudentIncidentPage({ user }) {
       case "college":
         return (
           <>
-            <label>ID*</label>
-            <input name="id" defaultValue={student.id} required />
+            {includeId && (
+              <>
+                <label>
+                  ID<span className="required">*</span>
+                </label>
+                <input name="id" defaultValue={student.student_id ?? student.id} required />
+              </>
+            )}
 
-            <label>Department*</label>
+            <label>
+              Department<span className="required">*</span>
+            </label>
             <select name="department" defaultValue={student.department} required>
               <option value="">Select Department</option>
               {departments.map((d) => (
-                <option key={d.id} value={d.department}>
-                  {d.department}
+                <option key={d.id} value={d.department ?? d.name ?? ""}>
+                  {d.department ?? d.name ?? ""}
                 </option>
               ))}
             </select>
 
-            <label>Year*</label>
+            <label>
+              Year<span className="required">*</span>
+            </label>
             <select name="year" defaultValue={student.year} required>
               <option value="">Select Year</option>
               <option value="1st Year">1st Year</option>
@@ -554,6 +701,46 @@ export default function StudentIncidentPage({ user }) {
 
   return (
     <div className="dashboard-container">
+      {/* Confirmation toast (top-right) */}
+      {confirmation.visible && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 1000,
+            background: "#0f9d58",
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 8,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            minWidth: 220,
+            maxWidth: 420,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div style={{ flex: 1, fontSize: 14 }}>{confirmation.message}</div>
+          <button
+            onClick={hideConfirmation}
+            aria-label="Close confirmation"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.95)",
+              fontSize: 16,
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="dashboard-header-bar">
         <h1 className="dashboard-title">Student Management</h1>
@@ -656,15 +843,10 @@ export default function StudentIncidentPage({ user }) {
                   value={filterDepartment}
                   onChange={(e) => {
                     setFilterDepartment(e.target.value);
-                    // If you want dependent selects cleared when department changes, uncomment these:
-                    // setFilterSection("");
-                    // setFilterGrade("");
-                    // setFilterStrand("");
                   }}
                 >
                   <option value="">All Departments</option>
                   {departments.map((d) => (
-                    // Use the 'department' field for both value and label so it matches student.department
                     <option key={d.id} value={d.department ?? d.name ?? ""}>
                       {d.department ?? d.name ?? ""}
                     </option>
@@ -800,12 +982,19 @@ export default function StudentIncidentPage({ user }) {
       {/* Add Modal */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-box">
+          <div className="modal-box add-modal">
             <div className="modal-header">
               <h3>Add Student</h3>
             </div>
             <form onSubmit={handleAddStudent}>
               <div className="modal-body">
+
+                {/* Moved ID above Name for Add modal */}
+                <label>
+                  ID<span className="required">*</span>
+                </label>
+                <input name="id" required />
+
                 <label>
                   Name<span className="required">*</span>
                 </label>
@@ -837,7 +1026,8 @@ export default function StudentIncidentPage({ user }) {
                   ))}
                 </div>
 
-                {renderFields(selectedLevel)}
+                {renderFields(selectedLevel, {}, { includeId: false })}
+
               </div>
               <div className="modal-footer">
                 <button

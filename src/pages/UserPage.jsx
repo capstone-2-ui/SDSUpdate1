@@ -139,7 +139,7 @@ export default function UserPage({ user }) {
       id: selectedUser.id,
       action: "update",
     };
-
+    
     fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

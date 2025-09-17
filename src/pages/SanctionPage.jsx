@@ -444,7 +444,7 @@ export default function SanctionPage({ user }) {
                 </label>
               </div>
 
-              <label style={{ display: "block", marginBottom: 6 }}>Category</label>
+              <label style={{ display: "block", marginBottom: 6 }}>Type</label>
               <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ width: "100%", marginBottom: 8 }}>
                 <option value="">All</option>
                 <option value="Minor">Minor</option>
@@ -518,9 +518,9 @@ export default function SanctionPage({ user }) {
             <div className="modal-body">
               <label>Sanction</label>
               <input type="text" name="sanction" value={formData.sanction} onChange={handleInputChange} />
-              <label>Category</label>
+              <label>Types</label>
               <select name="type" value={formData.type} onChange={handleInputChange}>
-                <option value="">Select Category</option>
+                <option value="">Select Type</option>
                 <option value="Minor">Minor</option>
                 <option value="Major">Major</option>
               </select>
