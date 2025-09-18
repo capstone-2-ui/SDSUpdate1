@@ -155,28 +155,128 @@ function IncidentPage({ user }) {
     }
   };
 
+  // Fetch student record by ID from backend (used when an incident doesn't include email)
+  const fetchStudentRecord = async (studentIdOrObj) => {
+    // Accept either a string id/student_id or an object with student_id/id
+    let q = "";
+    if (!studentIdOrObj) return null;
+
+    if (typeof studentIdOrObj === "string" || typeof studentIdOrObj === "number") {
+      // treat as student_id first
+      q = `student_id=${encodeURIComponent(String(studentIdOrObj))}`;
+    } else if (typeof studentIdOrObj === "object") {
+      if (studentIdOrObj.student_id) q = `student_id=${encodeURIComponent(studentIdOrObj.student_id)}`;
+      else if (studentIdOrObj.id) q = `id=${encodeURIComponent(studentIdOrObj.id)}`;
+    }
+
+    if (!q) return null;
+
+    try {
+      const res = await fetch(`${BACKEND_BASE}/Student.php?${q}`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Accept": "application/json",
+        },
+      });
+      if (!res.ok) {
+        console.warn("fetchStudentRecord: non-OK response", res.status);
+        return null;
+      }
+      const json = await res.json();
+      // backend returns empty object or {} when not found
+      if (!json || (typeof json === "object" && Object.keys(json).length === 0)) return null;
+      return json;
+    } catch (err) {
+      console.error("fetchStudentRecord error", err);
+      return null;
+    }
+  };
+
   // Open the user's default mail client with prefilled subject & body.
   // If no recipient email was found, the mailto will open with no "to" so the sender can address it.
-  const sendNotificationEmail = (row) => {
+  // sendNotificationEmail(rowOrStudent, explicitEmail)
+  // - rowOrStudent: incident row or student object (used to build body/subject and fallback fetch).
+  // - explicitEmail: string email to force-use (preferred if supplied).
+  const sendNotificationEmail = async (rowOrStudent = {}, explicitEmail = null) => {
     try {
-      const to = extractEmailFromRecord(row) || "";
-      const { subject, body } = composeNotificationEmail(row);
-      // Note: don't encode recipient (mailto expects a normal address), but encode subject/body.
-      const mailto = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      // Use location change so mobile/desktop mail clients open reliably
+      // prefer explicitEmail passed from modal
+      let to = explicitEmail && String(explicitEmail).trim() !== "" ? explicitEmail.trim() : null;
+
+      // If explicit email not provided, try to extract from provided record
+      if (!to) {
+        to = extractEmailFromRecord(rowOrStudent) || "";
+      }
+
+      // If still no email, attempt to fetch from backend using identifiers on the row/student
+      if (!to) {
+        const studentId = getCanonicalStudentId(rowOrStudent) || rowOrStudent.studentId || rowOrStudent.student_id || rowOrStudent.id || rowOrStudent.studentid;
+        if (studentId) {
+          const fetched = await fetchStudentRecord(studentId);
+          if (fetched) {
+            const fromFetched = extractEmailFromRecord(fetched);
+            if (fromFetched) to = fromFetched;
+            // merge fetched fields back into rowOrStudent so subject/body can use more fields
+            rowOrStudent = { ...rowOrStudent, ...fetched };
+          }
+        }
+      }
+
+      // Build subject & body (reuse composeNotificationEmail which expects an incident/row)
+      const composed = composeNotificationEmail(rowOrStudent) || {};
+      const subject = composed.subject || "Notification";
+      const body = composed.body || "";
+
+      // Build mailto URI. If `to` is empty, mailto: will be opened without recipient (user can fill).
+      const mailto = `mailto:${encodeURIComponent(to || "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      // Open mail client
       window.location.href = mailto;
 
-      // Show toast confirming we opened the mail client
-      if (to) {
-        showNotifyToast(`Mail client opened for ${to}`);
-      } else {
-        showNotifyToast("Mail client opened — please add recipient");
-      }
+      // small toast to indicate action
+      showNotifyToast(to ? "Opened mail client." : "Opened mail client (no recipient).");
+
+      return { success: true, opened: true, to: to || null };
     } catch (err) {
-      // Fallback: if something fails, open mail client with subject/body only
-      const { subject, body } = composeNotificationEmail(row);
-      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      showNotifyToast("Mail client opened");
+      console.error("sendNotificationEmail error:", err);
+      showNotifyToast("Failed to open mail client.");
+      return { success: false, error: err.message || String(err) };
+    }
+  };
+    
+    const sendBackendNotification = async (incidentRow) => {
+    const studentId = getCanonicalStudentId(incidentRow);
+    if (!studentId) {
+      alert("Cannot send notification: Student ID is missing.");
+      return { success: false, message: "Missing Student ID" };
+    }
+
+    try {
+      const res = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          action: "send_notification",
+          student_id: studentId,
+          incident: incidentRow,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showNotifyToast(data.message || "Notification sent successfully!");
+      } else {
+        const errorMessage = data.message || `Failed to send notification (HTTP ${res.status}).`;
+        alert(`Error: ${errorMessage}`);
+      }
+      return data;
+
+    } catch (err) {
+      console.error("sendBackendNotification error:", err);
+      alert("A network error occurred while trying to send the notification.");
+      return { success: false, message: String(err) };
     }
   };
   // --- end notification helpers ---
@@ -191,36 +291,39 @@ function IncidentPage({ user }) {
     };
   }, []);
 
-  // restore selection from navigation or sessionStorage
+  // restore selection from navigation state or sessionStorage
   useEffect(() => {
+    // prefer navigation state when user clicked Configure/View
+    const navStudent = location?.state?.student;
+    if (navStudent) {
+      setSelectedStudent(navStudent);
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(navStudent));
+      } catch (err) {
+        console.warn("Failed to persist selected student to sessionStorage", err);
+      }
+      return;
+    }
+
+    // fallback: try sessionStorage
     try {
-      if (location && location.state && location.state.student) {
-        setSelectedStudent(location.state.student);
-        try {
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(location.state.student));
-        } catch {}
-      } else {
-        const raw = sessionStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            setSelectedStudent(parsed);
-          } catch {}
-        }
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setSelectedStudent(parsed);
       }
     } catch (err) {
-      console.warn("Failed to restore selectedStudent in IncidentPage:", err);
+      console.warn("Failed to read selected student from sessionStorage", err);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location]);
 
-  // persist selection to sessionStorage
+  // Persist selectedStudent whenever it changes
   useEffect(() => {
+    if (!selectedStudent) return;
     try {
-      if (selectedStudent) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(selectedStudent));
-      else sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(selectedStudent));
     } catch (err) {
-      console.warn("Failed to persist selected student to sessionStorage:", err);
+      console.warn("Failed to persist selected student to sessionStorage", err);
     }
   }, [selectedStudent]);
 
@@ -786,19 +889,62 @@ function IncidentPage({ user }) {
   const handleMenuAction = (action, row) => {
     switch (action) {
       case "View Student Profile":
-        // Use the new StudentProfileModal for a modern profile view
-        setModal({
-          open: true,
-          title: "",
-          noHeader: true,
-          pos: null,
-          content: (
-            <StudentProfileModal
-              student={row}
-              onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
-            />
-          ),
-        });
+        // Fetch the full student record (to get email etc.) before opening the profile modal.
+        (async () => {
+          try {
+            let full = row;
+            // detect if row already contains a usable email
+            const hasEmail = full && (full.email || full.student_email || full.Email || full.email_address);
+            if (!hasEmail && (full.student_id || full.id || full.studentId)) {
+              const fetched = await fetchStudentRecord(full);
+              if (fetched) {
+                full = { ...full, ...fetched };
+              }
+            }
+
+            setModal({
+              open: true,
+              title: "",
+              noHeader: true,
+              pos: null,
+              content: (
+                <StudentProfileModal
+                  student={full}
+                  // onClose closes the modal
+                  onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                  // onNotify calls the page-level helper which opens mail client (uses email from record)
+                  onNotify={(studentFromModal) => {
+                    const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
+                    (async () => {
+                      await sendNotificationEmail(studentFromModal || full, explicitEmail);
+                    })();
+                  }}
+                />
+              ),
+            });
+          } catch (err) {
+            console.error("Error opening student profile:", err);
+            // fallback: still open modal with whatever data we have (and provide onNotify)
+            setModal({
+              open: true,
+              title: "",
+              noHeader: true,
+              pos: null,
+              content: (
+                <StudentProfileModal
+                  student={row}
+                  onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                  onNotify={(studentFromModal) => {
+                    const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email)) || null;
+                    (async () => {
+                      await sendNotificationEmail(studentFromModal || row, explicitEmail);
+                    })();
+                  }}
+                />
+              ),
+            });
+          }
+        })();
         break;
       case "Edit Violation":
         setModal({
@@ -854,6 +1000,7 @@ function IncidentPage({ user }) {
         break;
       case "Send Notification":
         // Automatic send: open the user's mail client immediately with a professional email
+        // Note: sendNotificationEmail is async but we don't need to await here
         sendNotificationEmail(row);
         // close the action modal so the mail client opens with focus
         setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
@@ -864,6 +1011,47 @@ function IncidentPage({ user }) {
 
     setMenuOpenIndex(null);
   };
+
+  // Fetch student email if not present (side effect)
+  useEffect(() => {
+    // If no selected student, nothing to do
+    if (!selectedStudent) return;
+
+    // If email is already present and non-empty, skip the fetch
+    const existingEmail = (selectedStudent.email || selectedStudent.Email || selectedStudent.student_email || "").toString().trim();
+    if (existingEmail) return;
+
+    // Determine a reliable identifier to query backend: prefer student_id then id
+    const sid = selectedStudent.student_id ?? selectedStudent.studentId ?? selectedStudent.id ?? null;
+    if (!sid) return;
+
+    // Build query param: always use student_id param (backend supports student_id or id)
+    const param = isNaN(Number(sid)) ? `student_id=${encodeURIComponent(sid)}` : `student_id=${encodeURIComponent(sid)}`;
+
+    const url = `${BACKEND_BASE}/Student.php?${param}`;
+
+    let mounted = true;
+    fetch(url, { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!mounted) return;
+        // Backend returns either an object or {} when not found. If it has an email, merge it.
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          setSelectedStudent((prev) => {
+            if (!prev) return data;
+            // Prefer backend email if present and non-empty, otherwise keep prev.email
+            const backendEmail = (data.email || data.Email || data.student_email || data.email_address || "").toString().trim();
+            const emailToUse = backendEmail || (prev.email || prev.Email || prev.student_email || "");
+            return { ...prev, ...data, email: emailToUse };
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch student record for email:", err);
+      });
+
+    return () => { mounted = false; };
+  }, [selectedStudent]);
 
   return (
     <div className="incident-container">
@@ -1177,15 +1365,18 @@ export default IncidentPage;
 
 /* -------------------------
    StudentProfileModal - modern professional profile UI used for "View Student Profile"
-   NOTE: This version intentionally does NOT render its own outer "card" chrome.
+   NOTE: this version intentionally does NOT render its own outer "card" chrome.
          It returns a single top-level container whose background is transparent so
          it renders as a single modal container inside the page-level modal wrapper.
    ------------------------- */
-function StudentProfileModal({ student = {}, onClose = () => {} }) {
-  // helper to safely read fields
+function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null }) {
+  // helper to safely read fields (tries multiple common keys)
   const get = (keys, fallback = "—") => {
-    for (const k of keys) {
-      if (student[k] !== undefined && student[k] !== null && String(student[k]).toString().trim() !== "") return student[k];
+    for (const k of (keys || [])) {
+      if (student && student[k] !== undefined && student[k] !== null) {
+        const val = String(student[k]).trim();
+        if (val !== "") return val;
+      }
     }
     return fallback;
   };
@@ -1242,8 +1433,12 @@ function StudentProfileModal({ student = {}, onClose = () => {} }) {
 
   const initials = (student.name || "S").split(" ").map(s => s[0]).slice(0,2).join("").toUpperCase();
 
+  // email value detection
+  const emailVal = get(["email", "Email", "student_email", "email_address"], "—");
+  const hasEmail = emailVal && emailVal !== "—";
+
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} aria-label="Student profile">
       <div style={headerStyle}>
         <div style={avatarStyle}>{initials}</div>
         <div style={{ flex: 1 }}>
@@ -1264,7 +1459,7 @@ function StudentProfileModal({ student = {}, onClose = () => {} }) {
 
         <div style={fieldStyle}>
           <div style={labelStyle}>Grade</div>
-          <div style={valueStyle}>{get(["grade", "year", "level"], "—")}</div>
+          <div style={valueStyle}>{get(["grade", "level"], "—")}</div>
         </div>
 
         <div style={fieldStyle}>
@@ -1284,7 +1479,7 @@ function StudentProfileModal({ student = {}, onClose = () => {} }) {
 
         <div style={fieldStyle}>
           <div style={labelStyle}>Number of Offense</div>
-          <div style={valueStyle}>{get(["offense"], "—")}</div>
+          <div style={valueStyle}>{get(["offense", "number_of_offense", "offence"], "—")}</div>
         </div>
 
         <div style={fieldStyle}>
@@ -1292,10 +1487,15 @@ function StudentProfileModal({ student = {}, onClose = () => {} }) {
           <div style={valueStyle}>{get(["violation"], "—")}</div>
         </div>
 
-        {/* NEW: show Email below Violation so sender can see the address used */}
         <div style={fieldStyle}>
           <div style={labelStyle}>Email</div>
-          <div style={valueStyle}>{get(["email", "parent_email", "guardian_email"], "—")}</div>
+          <div style={valueStyle}>
+            {hasEmail ? (
+              (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal) ? (
+                <a href={`mailto:${emailVal}`} style={{ color: "#111827", fontWeight: 600, textDecoration: "none" }}>{emailVal}</a>
+              ) : emailVal)
+            ) : "—"}
+          </div>
         </div>
 
         <div style={fieldStyle}>
@@ -1309,12 +1509,38 @@ function StudentProfileModal({ student = {}, onClose = () => {} }) {
           <div style={{ fontSize: 12, color: "#9ca3af" }}>Created</div>
           <div style={{ fontWeight: 600 }}>{String(createdAt)}</div>
         </div>
+
         <div style={{ fontSize: 13, color: "#374151" }}>
           <div style={{ fontSize: 12, color: "#9ca3af" }}>Updated</div>
           <div style={{ fontWeight: 600 }}>{String(updatedAt)}</div>
         </div>
-        <div style={{ marginLeft: 12 }}>
-          <button onClick={onClose} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#111827", color: "#fff", cursor: "pointer" }}>Close</button>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {onNotify ? (
+            <button
+              onClick={() => {
+                // pass the modal's student to the onNotify so sendNotificationEmail uses the modal's email
+                if (!hasEmail) {
+                  if (!window.confirm("No email found in this record. Open mail client anyway?")) return;
+                }
+                onNotify && onNotify(student);
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #065f46",
+                background: hasEmail ? "#065f46" : "#fff",
+                color: hasEmail ? "#fff" : "#065f46",
+                cursor: "pointer",
+              }}
+            >
+              Send Notification
+            </button>
+          ) : null}
+
+          <button onClick={onClose} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#111827", color: "#fff", cursor: "pointer" }}>
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -1473,7 +1699,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
       if (item[k]) {
         const val = String(item[k]).toLowerCase();
         if (val.includes("senior") || val.includes("shs") || val.includes("sen")) return gradeTypeFilter === "senior";
-        if (val.includes("junior") || val.includes("jhs") || val.includes("jun")) return gradeTypeFilter === "junior";
+        if (val.includes("junior") || val.includes("jr") || val.includes("jhs")) return gradeTypeFilter === "junior";
       }
     }
 
@@ -1573,8 +1799,8 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
     <div className="edit-incident-form modern-card">
       <div className="eif-header modern">
         <div className="eif-header-left">
-          <div className="avatar modern">{(local.name || "—").split(" ").map(n => n[0] || "").slice(0,2).join("") || "S"}</div>
-          <div className="eif-identity">
+          <div className="avatar modern"></div>
+          <div>
             <div className="eif-title">{local.name || "Edit Violation"}</div>
             <div className="eif-sub">{local.student_id ?? local.id ?? ""}</div>
           </div>
@@ -1745,7 +1971,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = () => {
           <div className="major-modal-step">
             <label>Choose a Sanction</label>
             <div className="sanction-row">
-              <select className="sanction-select" value={s4.sanction} onChange={(e) => setS4({ sanction: e.target.value })}>
+              <select className="sanction-select" value={s4.sanction} onChange={(e) => setS4({ sanction: e.target.value }) }>
                 <option value="">Select</option>
                 <option value="Suspension">Suspension</option>
                 <option value="Exclusion">Exclusion</option>
@@ -1760,7 +1986,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = () => {
         {step === 5 && (
           <div className="major-modal-step">
             <label>Decision Approval</label>
-            <select value={s5.decisionApproval} onChange={(e) => setS5({ decisionApproval: e.target.value })}>
+            <select value={s5.decisionApproval} onChange={(e) => setS5({ decisionApproval: e.target.value }) }>
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
@@ -1779,6 +2005,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = () => {
 /* -------------------------
    FilterPopover component (used in page-level Filter button)
    ------------------------- */
+// continuation - finish FilterPopover and close file
 function FilterPopover({ onApply, onClose }) {
   const [alpha, setAlpha] = useState(null);
   const [departmentOptions, setDepartmentOptions] = useState([]);
@@ -1805,11 +2032,50 @@ function FilterPopover({ onApply, onClose }) {
         <button onClick={toggleAlphaDesc} style={{ background: alpha === "desc" ? "#111827" : "#eee", color: alpha === "desc" ? "#fff" : "#111827" }}>Z→A</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label>Department<select value={department} onChange={(e) => setDepartment(e.target.value)}><option value="">Any</option>{(departmentOptions||[]).map((d,i)=><option key={i} value={d}>{d}</option>)}</select></label>
-        <label>Grade<select value={grade} onChange={(e) => setGrade(e.target.value)}><option value="">Any</option>{(gradeOptions||[]).map((g,i)=><option key={i} value={g}>{g}</option>)}</select></label>
-        <label>Section<select value={section} onChange={(e) => setSection(e.target.value)}><option value="">Any</option>{(sectionOptions||[]).map((s,i)=><option key={i} value={s}>{s}</option>)}</select></label>
-        <label>Violation<select value={violation} onChange={(e) => setViolation(e.target.value)}><option value="">Any</option>{(violationOptionsLocal||[]).map((v,i)=><option key={i} value={v}>{v}</option>)}</select></label>
+        <label>
+          Department
+          <select value={department} onChange={(e) => setDepartment(e.target.value)}>
+            <option value="">Any</option>
+            {(departmentOptions || []).map((d, i) => <option key={`dep-${i}`} value={d}>{d}</option>)}
+          </select>
+        </label>
+
+        <label>
+          Grade
+          <select value={grade} onChange={(e) => setGrade(e.target.value)}>
+            <option value="">Any</option>
+            {(gradeOptions || []).map((g, i) => {
+              const label = typeof g === "string" ? g : (g.grade ?? g.name ?? g.value ?? JSON.stringify(g));
+              return <option key={`grade-${i}`} value={label}>{label}</option>;
+            })}
+          </select>
+        </label>
+
+        <label>
+          Section
+          <select value={section} onChange={(e) => setSection(e.target.value)}>
+            <option value="">Any</option>
+            {(sectionOptions || []).map((s, i) => {
+              const label = typeof s === "string" ? s : (s.section ?? s.section_name ?? s.name ?? JSON.stringify(s));
+              return <option key={`sec-${i}`} value={label}>{label}</option>;
+            })}
+          </select>
+        </label>
+
+        <label>
+          Violation
+          <select value={violation} onChange={(e) => setViolation(e.target.value)}>
+            <option value="">Any</option>
+            {(violationOptionsLocal || []).map((v, i) => {
+              if (v === null || v === undefined) return null;
+              if (typeof v === "string" || typeof v === "number") return <option key={`viol-${i}`} value={String(v)}>{String(v)}</option>;
+              const label = v.name ?? v.value ?? v.violation ?? v.label ?? JSON.stringify(v);
+              return <option key={`viol-${i}`} value={String(label)}>{label}</option>;
+            })}
+          </select>
+        </label>
       </div>
+
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={() => { onClose(); }}>Close</button>
         <button onClick={() => apply()}>Apply</button>

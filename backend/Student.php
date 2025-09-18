@@ -30,8 +30,38 @@ function getJsonInput() {
     return json_decode(file_get_contents("php://input"), true);
 }
 
-// ✅ GET (fetch students)
+// ✅ GET (fetch students or single student by id/student_id)
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    // If a specific id or student_id was requested, return a single row
+    if (isset($_GET['id']) || isset($_GET['student_id'])) {
+        // Prefer numeric DB id when provided and valid
+        if (isset($_GET['id']) && ctype_digit($_GET['id'])) {
+            $intId = intval($_GET['id']);
+            $stmt = $conn->prepare("SELECT * FROM students WHERE id = ? LIMIT 1");
+            $stmt->bind_param("i", $intId);
+        } else {
+            // Otherwise use student_id string
+            $sid = isset($_GET['student_id']) ? $_GET['student_id'] : null;
+            $stmt = $conn->prepare("SELECT * FROM students WHERE student_id = ? LIMIT 1");
+            $stmt->bind_param("s", $sid);
+        }
+
+        if ($stmt) {
+            if ($stmt->execute()) {
+                $res = $stmt->get_result();
+                $row = $res->fetch_assoc();
+                echo json_encode($row ? $row : (object)[]);
+            } else {
+                echo json_encode(["error" => "Query failed: " . $stmt->error]);
+            }
+            $stmt->close();
+        } else {
+            echo json_encode(["error" => "Prepare failed: " . $conn->error]);
+        }
+        exit;
+    }
+
+    // Otherwise return the full list (existing behavior)
     $sql = "SELECT * FROM students";
     $result = $conn->query($sql);
 

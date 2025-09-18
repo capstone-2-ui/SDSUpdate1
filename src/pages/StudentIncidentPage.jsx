@@ -38,6 +38,14 @@ export default function StudentIncidentPage({ user }) {
   const [studentIncidents, setStudentIncidents] = useState([]);
   const [violationCounts, setViolationCounts] = useState({});
 
+  // Add-modal grade selection so sections can be filtered live while adding
+  const [addFormGrade, setAddFormGrade] = useState("");
+
+  // When the selected level for the Add modal changes, clear any addFormGrade
+  useEffect(() => {
+    setAddFormGrade("");
+  }, [selectedLevel]);
+  
   // Confirmation (top-right green toast)
   const timeoutRef = useRef(null);
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
@@ -145,6 +153,7 @@ export default function StudentIncidentPage({ user }) {
           reloadStudents();
           setShowAddModal(false);
           setSelectedLevel("");
+          setAddFormGrade("");
           showConfirmation("Student added successfully");
         } else {
           alert("Error adding student: " + (data.error || data.message));
@@ -339,13 +348,25 @@ export default function StudentIncidentPage({ user }) {
   const STORAGE_KEY = "SDS:selectedStudent";
 
   const goToIncidentPage = (student) => {
-    // Persist selection so Incident page can restore it after refresh
+    // normalize fields so IncidentPage can read them consistently
+    const canonical = {
+      ...student,
+      // ensure canonical student_id field (some records use id, some student_id)
+      student_id: student.student_id ?? student.id ?? "",
+      // ensure email field under a single key
+      email: (student.email ?? student.email_address ?? student.student_email ?? "").trim(),
+    };
+
+    // persist to sessionStorage so IncidentPage can restore on refresh
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(student));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(canonical));
     } catch (err) {
-      console.warn("Failed to persist selected student before navigation:", err);
+      console.warn("Could not persist selected student:", err);
     }
-    navigate("/incident", { state: { student } });
+
+    // navigate and pass via state for immediate availability
+    // adjust "/incident" if your route path differs
+    navigate("/incident", { state: { student: canonical } });
   };
 
   // Load incidents (from backend/Incident.php) for a particular student and compute counts
@@ -452,6 +473,7 @@ export default function StudentIncidentPage({ user }) {
   // Render fields
   const renderFields = (level, student = {}, options = { includeId: true }) => {
     const includeId = options.includeId !== false;
+    const onGradeChange = options.onGradeChange; // optional handler passed by caller
 
     // helper: case-insensitive match for level keywords in 'type' fields
     const isTypeMatch = (typeValue, keyword) => {
@@ -481,6 +503,10 @@ export default function StudentIncidentPage({ user }) {
       ? sections.filter((s) => isTypeMatch(s.type ?? s.category ?? "", seniorKeyword))
       : sections;
 
+    // Determine current grade for filtering sections:
+    // prefer explicit grade on the student (edit/view), otherwise use the add-form grade state
+    const currentGrade = (student && student.grade) ? student.grade : addFormGrade || "";
+
     switch (level) {
       case "junior":
         return (
@@ -497,7 +523,17 @@ export default function StudentIncidentPage({ user }) {
             <label>
               Grade<span className="required">*</span>
             </label>
-            <select name="grade" defaultValue={student.grade} required>
+            <select
+              name="grade"
+              defaultValue={student.grade}
+              required
+              onChange={(e) => {
+                // notify caller (Add modal passes a handler) so sections filter live
+                if (typeof onGradeChange === "function") onGradeChange(e.target.value);
+                // also update local addFormGrade as a fallback
+                setAddFormGrade(e.target.value);
+              }}
+            >
               <option value="">Select Grade</option>
               {(Array.isArray(juniorGrades) && juniorGrades.length ? juniorGrades : grades).map((g) => (
                 <option key={g.id ?? g.grade} value={g.grade ?? g.name ?? g.id}>
@@ -511,16 +547,30 @@ export default function StudentIncidentPage({ user }) {
             </label>
             <select name="section" defaultValue={student.section} required>
               <option value="">Select Section</option>
-              {(Array.isArray(juniorSections) && juniorSections.length ? juniorSections : sections).map((s) => (
-                <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
-                  {s.section ?? s.name ?? s.id}
-                </option>
-              ))}
+              {(Array.isArray(juniorSections) && juniorSections.length ? juniorSections : sections)
+                .filter((s) => matchesSectionToGrade(s, currentGrade))
+                .map((s) => (
+                  <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
+                    {s.section ?? s.name ?? s.id}
+                  </option>
+                ))}
             </select>
           </>
         );
 
       case "senior":
+        // helper to detect sections meant for senior high (type/category/name may contain clues)
+        const isSeniorSection = (s) => {
+          if (!s) return false;
+          const combined = [s.type, s.category, s.title, s.section, s.name]
+            .filter(Boolean)
+            .join(" ")
+            .toString()
+            .toLowerCase();
+          // match common senior indicators and also explicit Grade 11/12 mentions
+          return combined.includes("senior") || combined.includes("senior high") || combined.includes("grade 11") || combined.includes("grade 12") || combined.includes("11") || combined.includes("12");
+        };
+
         return (
           <>
             {includeId && (
@@ -535,7 +585,15 @@ export default function StudentIncidentPage({ user }) {
             <label>
               Grade<span className="required">*</span>
             </label>
-            <select name="grade" defaultValue={student.grade} required>
+            <select
+              name="grade"
+              defaultValue={student.grade}
+              required
+              onChange={(e) => {
+                if (typeof onGradeChange === "function") onGradeChange(e.target.value);
+                setAddFormGrade(e.target.value);
+              }}
+            >
               <option value="">Select Grade</option>
               {(Array.isArray(seniorGrades) && seniorGrades.length ? seniorGrades : grades).map((g) => (
                 <option key={g.id ?? g.grade} value={g.grade ?? g.name ?? g.id}>
@@ -550,11 +608,17 @@ export default function StudentIncidentPage({ user }) {
             </label>
             <select name="section" defaultValue={student.section} required>
               <option value="">Select Section</option>
-              {(Array.isArray(seniorSections) && seniorSections.length ? seniorSections : sections).map((s) => (
-                <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
-                  {s.section ?? s.name ?? s.id}
-                </option>
-              ))}
+              {(Array.isArray(seniorSections) && seniorSections.length ? seniorSections : sections)
+                .filter((s) => {
+                  // include section if it explicitly matches the selected grade (e.g., "Grade 11")
+                  // OR if the section text/type indicates it's a senior-high section
+                  return matchesSectionToGrade(s, currentGrade) || isSeniorSection(s);
+                })
+                .map((s) => (
+                  <option key={s.id ?? s.section} value={s.section ?? s.name ?? s.id}>
+                    {s.section ?? s.name ?? s.id}
+                  </option>
+                ))}
             </select>
 
             <label>
@@ -697,6 +761,53 @@ export default function StudentIncidentPage({ user }) {
     setFilterSection("");
     setFilterGrade("");
     setFilterStrand("");
+  };
+
+  // Replace the existing matchesSectionToGrade function with this
+  const matchesSectionToGrade = (sectionObj, gradeValue) => {
+    if (!gradeValue) return true; // no filter -> all allowed
+    const gradeRaw = String(gradeValue).toLowerCase().trim();
+
+    // normalize helper: extract digits from grade string (e.g., "7", "7th", "grade 7", "1st year" -> 7 or 1)
+    const digitsFrom = (s) => {
+      if (!s) return "";
+      const m = String(s).match(/\d+/);
+      return m ? m[0] : "";
+    };
+
+    const gradeDigits = digitsFrom(gradeRaw);
+
+    // if sectionObj is a string, compare text
+    const sectionTextCandidates = [];
+    if (!sectionObj) return true;
+    if (typeof sectionObj === "string") sectionTextCandidates.push(sectionObj);
+    // include fields that may contain grade text: section/name/title/type/category
+    if (sectionObj.section) sectionTextCandidates.push(sectionObj.section);
+    if (sectionObj.name) sectionTextCandidates.push(sectionObj.name);
+    if (sectionObj.title) sectionTextCandidates.push(sectionObj.title);
+    if (sectionObj.type) sectionTextCandidates.push(sectionObj.type);
+    if (sectionObj.category) sectionTextCandidates.push(sectionObj.category);
+
+    // check explicit 'grade' or 'grades' fields on section object
+    if (sectionObj.grade) {
+      if (String(sectionObj.grade).toLowerCase().trim() === gradeRaw) return true;
+      if (digitsFrom(sectionObj.grade) && digitsFrom(sectionObj.grade) === gradeDigits) return true;
+    }
+    if (Array.isArray(sectionObj.grades) && sectionObj.grades.length) {
+      if (sectionObj.grades.some((g) => String(g).toLowerCase().trim() === gradeRaw)) return true;
+      if (sectionObj.grades.some((g) => digitsFrom(g) && digitsFrom(g) === gradeDigits)) return true;
+    }
+
+    // fallback: check text includes whole normalized grade or digits
+    for (const t of sectionTextCandidates) {
+      if (!t) continue;
+      const tl = String(t).toLowerCase();
+      if (tl.includes(gradeRaw)) return true;
+      if (gradeDigits && tl.includes(gradeDigits)) return true;
+    }
+
+    // nothing matched -> do not include
+    return false;
   };
 
   return (
@@ -1026,7 +1137,7 @@ export default function StudentIncidentPage({ user }) {
                   ))}
                 </div>
 
-                {renderFields(selectedLevel, {}, { includeId: false })}
+                {renderFields(selectedLevel, {}, { includeId: false, onGradeChange: (v) => setAddFormGrade(v) })}
 
               </div>
               <div className="modal-footer">
