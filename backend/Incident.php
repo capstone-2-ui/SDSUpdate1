@@ -82,13 +82,35 @@ if ($method === "POST") {
         }
         $message .= "\nPlease visit the student affairs office for more details.\n\nSincerely,\nStudent Discipline Office";
 
-        $headers = "From: no-reply@your-school.com";
+        $headers = "From: studentdiscipline2@gmail.com";
 
-        if (mail($to, $subject, $message, $headers)) {
-            echo json_encode(["success" => true, "message" => "Notification sent successfully to " . $to]);
-        } else {
+        // Load PHPMailer classes (paths adjusted if needed)
+        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'Exception.php';
+        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'PHPMailer.php';
+        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'SMTP.php';
+
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'studentdiscipline2@gmail.com'; // your gmail
+            $mail->Password   = 'nmbu qare yivj mxjr';           // Google App Password
+            $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+
+            $mail->setFrom('studentdiscipline2@gmail.com', 'Student Discipline Office');
+            $mail->addAddress($to);
+
+            $mail->isHTML(false);
+            $mail->Subject = $subject;
+            $mail->Body = $message;
+
+            $mail->send();
+            echo json_encode(['success' => true, 'message' => 'Notification has been sent successfully to ' . $to]);
+        } catch (PHPMailer\PHPMailer\Exception $e) {
             http_response_code(500);
-            echo json_encode(["success" => false, "message" => "Failed to send email. Please check server configuration."]);
+            echo json_encode(['success' => false, 'message' => 'Mailer Error: ' . $mail->ErrorInfo]);
         }
         exit;
     }

@@ -337,7 +337,7 @@
 .modal-content.popover {
   position: absolute;
   width: auto;
-  min-width: 200px;
+  min-width: 500px;
   max-width: 420px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.28);
   border-radius: 6px;
@@ -946,6 +946,26 @@
   box-sizing: border-box;
 }
 
+/* Controls outer wrapper spacing if needed */
+.major-offense-modal-wrapper {
+  padding: 12px;
+}
+
+/* Primary width/centering for the modal container */
+.major-offense-modal-wrapper .major-modal-container {
+  max-width: 1000px; /* adjust as desired */
+  width: 90%;        /* responsive fallback */
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* If you want an exact fixed width, use:
+.major-offense-modal-wrapper .major-modal-container {
+  width: 1100px;
+  max-width: 1100px;
+}
+*/
+
 /* === Form sizing & spacing: keep labels above inputs (no overlap) ===
    Replace previous "Make all input..." block with this.
 */
@@ -1081,5 +1101,44 @@ select.eif-input:focus {
   border-color: #c49b7a;
   box-shadow: 0 4px 12px rgba(196,155,122,0.12);
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a2f12' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+}
+
+/* filepath: src/pages/IncidentPage.css */
+/* Make the modal dialog a bit wider by default */
+.modal-dialog.modal-dialog-resizable {
+  max-width: 900px; /* default width; change as needed */
+  width: calc(90%); /* responsive fallback on small screens */
+}
+
+/* Allow the user to drag-resize the modal content from corner/edge on desktop */
+.modal-dialog.modal-dialog-resizable .modal-content {
+  resize: both;
+  overflow: auto; /* required so resize works and content scrolls */
+  min-width: 400px;
+  min-height: 220px;
+  /* optional: nicer handle area on top right */
+  box-sizing: border-box;
+}
+
+/* Keep body scrollable inside modal when content is tall */
+.modal-body {
+  max-height: 60vh; /* change this as necessary */
+  overflow-y: auto;
+}
+
+/* Ensure modal container allows overflow so resize can show outside */
+.modal {
+  overflow: auto; /* allow visible overflow when user resizes */
+}
+
+/* Make sure on very small screens modal still fits */
+@media (max-width: 480px) {
+  .modal-dialog.modal-dialog-resizable {
+    max-width: 95%;
+    width: 95%;
+  }
+  .modal-content {
+    resize: none; /* disable drag-resize on tiny screens for better UX */
+  }
 }
 

@@ -25,7 +25,7 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (Exception $e) {
-    http_response_code(500);
+    http_response_code(500); 
     echo json_encode(['success' => false, 'message' => 'DB connection failed: ' . $e->getMessage()]);
     exit;
 }
@@ -76,6 +76,35 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $payload = json_decode(file_get_contents('php://input'), true);
+
+    // --- NEW: Accept a full-data save (no 'step') for convenience ---
+    // If client posts { student_id: "...", data: { step1:..., step2:... } } save the whole object
+    if ($payload && isset($payload['student_id']) && isset($payload['data']) && !isset($payload['step'])) {
+        $student_id = (string)$payload['student_id'];
+        $fullData = $payload['data'];
+        // compute completed_steps automatically
+        $completed = 0;
+        for ($i = 1; $i <= 5; $i++) {
+            if (!empty($fullData['step' . $i])) $completed++;
+        }
+
+        // upsert row
+        $stmt = $pdo->prepare("SELECT id FROM major_offenses WHERE student_id = ? LIMIT 1");
+        $stmt->execute([$student_id]);
+        $row = $stmt->fetch();
+
+        if ($row) {
+            $upd = $pdo->prepare("UPDATE major_offenses SET data = ?, completed_steps = ? WHERE student_id = ?");
+            $upd->execute([json_encode($fullData), $completed, $student_id]);
+        } else {
+            $ins = $pdo->prepare("INSERT INTO major_offenses (student_id, data, completed_steps) VALUES (?, ?, ?)");
+            $ins->execute([$student_id, json_encode($fullData), $completed]);
+        }
+
+        echo json_encode(['success' => true, 'student_id' => $student_id, 'data' => $fullData, 'completed_steps' => $completed]);
+        exit;
+    }
+
     if (!$payload || !isset($payload['student_id']) || !isset($payload['step'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Missing student_id or step']);

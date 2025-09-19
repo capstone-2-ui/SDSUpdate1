@@ -914,9 +914,20 @@ function IncidentPage({ user }) {
                   onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
                   // onNotify calls the page-level helper which opens mail client (uses email from record)
                   onNotify={(studentFromModal) => {
-                    const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
+                    // Prefer to call backend so server sends a real email
                     (async () => {
-                      await sendNotificationEmail(studentFromModal || full, explicitEmail);
+                      const result = await sendBackendNotification(studentFromModal || full);
+                      if (result && result.success) {
+                        showNotifyToast(result.message || "Notification sent successfully!");
+                      } else {
+                        const errMsg = result?.message || "Failed to send notification via server.";
+                        // fallback to opening mail client if backend failed
+                        if (window.confirm(errMsg + " Open mail client instead?")) {
+                          // call the existing mailto fallback
+                          const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
+                          await sendNotificationEmail(studentFromModal || full, explicitEmail);
+                        }
+                      }
                     })();
                   }}
                 />
@@ -935,9 +946,19 @@ function IncidentPage({ user }) {
                   student={row}
                   onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
                   onNotify={(studentFromModal) => {
-                    const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email)) || null;
+                    // Prefer to call backend so server sends a real email
                     (async () => {
-                      await sendNotificationEmail(studentFromModal || row, explicitEmail);
+                      const result = await sendBackendNotification(studentFromModal || row);
+                      if (result && result.success) {
+                        showNotifyToast(result.message || "Notification sent successfully!");
+                      } else {
+                        const errMsg = result?.message || "Failed to send notification via server.";
+                        // fallback: prompt to open mail client if backend failed
+                        if (window.confirm(errMsg + " Open mail client instead?")) {
+                          const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
+                          await sendNotificationEmail(studentFromModal || row, explicitEmail);
+                        }
+                      }
                     })();
                   }}
                 />
@@ -989,15 +1010,102 @@ function IncidentPage({ user }) {
           })();
         }
         break;
-      case "Process":
+      // Replace the "Process" branch inside handleMenuAction switch(...) with this:
+
+case "Process":
+  (async () => {
+    const sid = row.student_id ?? row.id ?? row.studentId;
+    if (!sid) {
+      alert("Missing student id for Major Process");
+      setMenuOpenIndex(null);
+      return;
+    }
+
+    try {
+      // fetch the saved major-offense record (if any)
+      const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?student_id=${encodeURIComponent(sid)}`);
+      const json = await resp.json().catch(() => null);
+      const record = json?.record ?? null;
+      // determine completed steps: backend provides completed_steps; fall back to counting data keys
+      const completed = record?.completed_steps ?? (record?.data ? Object.keys(record.data).filter(k => record.data[k] !== null && record.data[k] !== undefined && String(record.data[k]).trim() !== "").length : 0);
+
+      if (record && Number(completed) >= 5) {
+        // open a read-only form modal that shows the saved steps and allows "Edit"
         setModal({
           open: true,
-          title: "Major Offense",
-          content: <MajorOffenseModal step={1} student={row} savedData={{}} onSave={async () => { /* not fully implemented here */ }} onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })} />,
-          pos: null,
+          title: "Major Offense - Completed Form",
           noHeader: false,
+          pos: null,
+          content: (
+            <MajorOffenseFormModal
+              record={record}
+              student={row}
+              onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+              onEdit={() => {
+                // close current modal and open the interactive modal prefilled with saved data
+                setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                setTimeout(() => {
+                  setModal({
+                    open: true,
+                    title: "",
+                    noHeader: false,
+                    pos: null,
+                    content: (
+                      <MajorOffenseModal
+                        step={1}
+                        student={row}
+                        savedData={record.data ?? {}}
+                        onSave={async (res) => { /* optional: refresh list */ }}
+                        onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                      />
+                    ),
+                  });
+                }, 120);
+              }}
+            />
+          ),
         });
-        break;
+      } else {
+        // not complete yet -> open interactive modal (prefill saved data if present)
+        setModal({
+          open: true,
+          title: "",
+          noHeader: false,
+          pos: null,
+          content: (
+            <MajorOffenseModal
+              step={1}
+              student={row}
+              savedData={record?.data ?? {}}
+              onSave={async (res) => { /* optional: refresh list */ }}
+              onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+            />
+          ),
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load Major Offense record:", err);
+      // fallback: open interactive modal with no prefill
+      setModal({
+        open: true,
+        title: "",
+        noHeader: false,
+        pos: null,
+        content: (
+          <MajorOffenseModal
+            step={1}
+            student={row}
+            savedData={{}}
+            onSave={async (res) => {}}
+            onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+          />
+        ),
+      });
+    }
+
+    setMenuOpenIndex(null);
+  })();
+  break;
       case "Send Notification":
         // Automatic send: open the user's mail client immediately with a professional email
         // Note: sendNotificationEmail is async but we don't need to await here
@@ -1346,7 +1454,6 @@ function IncidentPage({ user }) {
       {modal.open && (
         <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal({ open: false, title: "", content: null, pos: null, noHeader: false }); }}>
           <div className={`modal-content ${modal.pos ? "popover" : ""}`} style={modal.pos ? { left: modal.pos.left + "px", top: modal.pos.top + "px" } : {}}>
-            {!modal.noHeader && modal.title && <h2 className="modal-title">{modal.title}</h2>}
             {modal.content}
             {!modal.noHeader && (<div className="modal-actions"><button onClick={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}>Close</button></div>)}
           </div>
@@ -1896,29 +2003,298 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
 }
 
 /* -------------------------
-   MajorOffenseModal (kept consistent with your original file)
+   MajorOffenseModal (enhanced: local step state and Next/Back navigation)
    ------------------------- */
-function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = () => {}, onClose = () => {} }) {
-  const [s1, setS1] = useState({ incidentReport: savedData?.incidentReport || "" });
-  const [s2, setS2] = useState({ chairDean: savedData?.chairDean || "", facultyMember: savedData?.facultyMember || "", sscRep: savedData?.sscRep || "", dscRep: savedData?.dscRep || "", guidance: savedData?.guidance || "" });
-  const [s3, setS3] = useState({ complainant: !!savedData?.complainant, respondentPresent: !!savedData?.respondentPresent, parentsPresent: !!savedData?.parentsPresent, witnessTestimonies: !!savedData?.witnessTestimonies, finalStatements: !!savedData?.finalStatements });
-  const [s4, setS4] = useState({ sanction: savedData?.sanction || "" });
-  const [s5, setS5] = useState({ decisionApproval: savedData?.decisionApproval || "" });
+function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async () => ({}), onClose = () => {} }) {
+  const BACKEND_BASE = "http://localhost/SDSUpdate1-main/backend";
+  const [currentStep, setCurrentStep] = useState(step || 1);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
 
+  const getSid = () => (student?.student_id ?? student?.id ?? student?.studentId ?? "");
+
+  const [steps, setSteps] = useState({
+    step1: savedData?.step1 ?? { incidentReport: "" },
+    step2: savedData?.step2 ?? { chairDean: "", facultyMember: "", sscRep: "", dscRep: "", guidance: "" },
+    step3: savedData?.step3 ?? { complainant: false, respondentPresent: false, parentsPresent: false, witnessTestimonies: false, finalStatements: "" },
+    step4: savedData?.step4 ?? { sanction: "" },
+    step5: savedData?.step5 ?? { decisionApproval: "" },
+  });
+
+  // NEW: store only Major-type sanctions
+  const [sanctionOptions, setSanctionOptions] = useState([]);
+  const [sanctionLoading, setSanctionLoading] = useState(false);
+
+  // load any existing saved record for this student on mount
   useEffect(() => {
-    setS1({ incidentReport: savedData?.incidentReport || "" });
-    setS2({ chairDean: savedData?.chairDean || "", facultyMember: savedData?.facultyMember || "", sscRep: savedData?.sscRep || "", dscRep: savedData?.dscRep || "", guidance: savedData?.guidance || "" });
-    setS3({ complainant: !!savedData?.complainant, respondentPresent: !!savedData?.respondentPresent, parentsPresent: !!savedData?.parentsPresent, witnessTestimonies: !!savedData?.witnessTestimonies, finalStatements: !!savedData?.finalStatements });
-    setS4({ sanction: savedData?.sanction || "" });
-    setS5({ decisionApproval: savedData?.decisionApproval || "" });
-  }, [savedData]);
+    let isMounted = true;
+    const sid = getSid();
+    const load = async () => {
+      if (!sid) {
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?student_id=${encodeURIComponent(sid)}`);
+        const data = await resp.json().catch(() => null);
+        if (!isMounted) return;
+        if (data && data.success && data.record && data.record.data) {
+          const d = data.record.data;
+          setSteps((prev) => ({
+            step1: d.step1 ?? prev.step1,
+            step2: d.step2 ?? prev.step2,
+            step3: d.step3 ?? prev.step3,
+            step4: d.step4 ?? prev.step4,
+            step5: d.step5 ?? prev.step5,
+          }));
+        }
+      } catch (err) {
+        // ignore
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student?.student_id, student?.id]);
 
-  const saveCurrent = () => {
-    onSave();
+  // Fetch sanctions from backend and keep only those with type === 'Major'
+  const fetchSanctions = async () => {
+    try {
+      setSanctionLoading(true);
+      // call the existing endpoint (returns array or { data: [...] })
+      const res = await fetch(`${BACKEND_BASE}/Sanction.php?action=read`);
+      const d = await res.json().catch(() => null);
+      const arr = Array.isArray(d) ? d : (d?.data ?? []);
+      // filter for type === 'Major' (case-insensitive). If items are primitives, keep them.
+      const majors = (Array.isArray(arr) ? arr : []).filter((s) => {
+        if (s === null || s === undefined) return false;
+        if (typeof s === "string" || typeof s === "number") return true;
+        const t = (s.type ?? s.Type ?? s.type_name ?? "").toString().toLowerCase();
+        return t === "major";
+      });
+      setSanctionOptions(majors);
+    } catch (err) {
+      setSanctionOptions([]);
+    } finally {
+      setSanctionLoading(false);
+    }
+  };
+
+  // load once on mount (optional) so dropdown is usually ready
+  useEffect(() => {
+    fetchSanctions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setStepField = (which, value) => {
+    setSteps((p) => ({ ...p, [which]: value }));
+    setMessage(null);
+  };
+
+  const saveStepToServer = async (stepNum) => {
+    const sid = getSid();
+    if (!sid) {
+      setMessage({ type: "error", text: "No student selected" });
+      return { success: false, message: "No student id" };
+    }
+    const payload = { student_id: sid, step: stepNum, data: steps[`step${stepNum}`] };
+    try {
+      setSaving(true);
+      const res = await fetch(`${BACKEND_BASE}/MajorOffense.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({ success: true }));
+      if (json && json.success) {
+        setMessage({ type: "success", text: `Step ${stepNum} saved.` });
+        return { success: true, data: json };
+      } else {
+        const msg = (json && (json.message || json.error)) || "Save failed";
+        setMessage({ type: "error", text: `Save failed: ${msg}` });
+        return { success: false, message: msg };
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: String(err) });
+      return { success: false, message: String(err) };
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveFullDataToServer = async () => {
+    const sid = getSid();
+    if (!sid) {
+      setMessage({ type: "error", text: "No student selected" });
+      return { success: false, message: "No student id" };
+    }
+    const payload = { student_id: sid, data: steps };
+    try {
+      setSaving(true);
+      const res = await fetch(`${BACKEND_BASE}/MajorOffense.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({ success: true }));
+      if (json && json.success) {
+        setMessage({ type: "success", text: "All steps saved and form persisted." });
+        try { onSave && onSave(json); } catch {}
+        return { success: true, data: json };
+      } else {
+        const msg = (json && (json.message || json.error)) || "Save failed";
+        setMessage({ type: "error", text: `Save failed: ${msg}` });
+        return { success: false, message: msg };
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: String(err) });
+      return { success: false, message: String(err) };
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveClick = async () => {
+    const saved = await saveStepToServer(currentStep);
+    if (!saved || !saved.success) return;
+    if (currentStep >= 5) {
+      const full = await saveFullDataToServer();
+      if (full && full.success) {
+        setTimeout(() => { onClose(); }, 800);
+      }
+      return;
+    }
+    setCurrentStep((s) => s + 1);
+  };
+
+  const handleBackClick = () => {
+    if (currentStep <= 1) onClose();
+    else setCurrentStep((s) => s - 1);
+    setMessage(null);
+  };
+
+  const renderStepBody = () => {
+    if (loading) return <div style={{ padding: 12 }}>Loading…</div>;
+
+    switch (currentStep) {
+      case 1:
+        return (
+          <div className="major-modal-step">
+            <label>Incident Report</label>
+            <textarea
+              placeholder="Write incident report..."
+              value={steps.step1.incidentReport ?? ""}
+              onChange={(e) => setStepField("step1", { ...steps.step1, incidentReport: e.target.value })}
+              rows={8}
+            />
+          </div>
+        );
+      case 2:
+        return (
+          <div className="major-modal-step">
+            <div className="major-modal-committee">
+              <div>
+                <label>Appointed Chair or College Dean</label>
+                <input type="text" value={steps.step2.chairDean ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, chairDean: e.target.value })} />
+              </div>
+              <div>
+                <label>Faculty Member</label>
+                <input type="text" value={steps.step2.facultyMember ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, facultyMember: e.target.value })} />
+              </div>
+              <div>
+                <label>SSC Rep</label>
+                <input type="text" value={steps.step2.sscRep ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, sscRep: e.target.value })} />
+              </div>
+              <div>
+                <label>DSC Rep</label>
+                <input type="text" value={steps.step2.dscRep ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, dscRep: e.target.value })} />
+              </div>
+              <div>
+                <label>Guidance</label>
+                <input type="text" value={steps.step2.guidance ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, guidance: e.target.value })} />
+              </div>
+            </div>
+          </div>
+        );
+      case 3:
+        return (
+          <div className="major-modal-step">
+            <div className="major-modal-checkboxes">
+              <label><input type="checkbox" checked={!!steps.step3.complainant} onChange={(e) => setStepField("step3", { ...steps.step3, complainant: e.target.checked })} /> Complainant present</label>
+              <label><input type="checkbox" checked={!!steps.step3.respondentPresent} onChange={(e) => setStepField("step3", { ...steps.step3, respondentPresent: e.target.checked })} /> Respondent present</label>
+              <label><input type="checkbox" checked={!!steps.step3.parentsPresent} onChange={(e) => setStepField("step3", { ...steps.step3, parentsPresent: e.target.checked })} /> Parents present</label>
+              <label><input type="checkbox" checked={!!steps.step3.witnessTestimonies} onChange={(e) => setStepField("step3", { ...steps.step3, witnessTestimonies: e.target.checked })} /> Witness testimonies collected</label>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <label>Final statements / notes</label>
+              <textarea value={steps.step3.finalStatements ?? ""} onChange={(e) => setStepField("step3", { ...steps.step3, finalStatements: e.target.value })} rows={4} />
+            </div>
+          </div>
+        );
+      case 4:
+        return (
+          <div className="major-modal-step">
+            <label>Choose a Sanction</label>
+            <div className="sanction-row">
+              <select
+                className="sanction-select"
+                value={steps.step4.sanction ?? ""}
+                onChange={(e) => setStepField("step4", { ...steps.step4, sanction: e.target.value })}
+                onFocus={() => {
+                  // ensure list is fetched when user clicks the dropdown
+                  if (sanctionOptions.length === 0 && !sanctionLoading) fetchSanctions();
+                }}
+              >
+                <option value="">{sanctionLoading ? "Loading..." : "Select"}</option>
+                {sanctionOptions && sanctionOptions.length > 0 ? (
+                  sanctionOptions.map((opt, idx) => {
+                    if (opt === null || opt === undefined) return null;
+                    if (typeof opt === "string" || typeof opt === "number") {
+                      const v = String(opt);
+                      return <option key={`${v}-${idx}`} value={v}>{v}</option>;
+                    }
+                    const label = opt.sanction ?? opt.name ?? opt.value ?? opt.label ?? JSON.stringify(opt);
+                    const value = String(label);
+                    return <option key={`${value}-${idx}`} value={value}>{label}</option>;
+                  })
+                ) : (
+                  <>
+                    <option value="Suspension">Suspension</option>
+                    <option value="Exclusion">Exclusion</option>
+                    <option value="Community Service">Community Service</option>
+                    <option value="Counseling">Counseling</option>
+                  </>
+                )}
+              </select>
+            </div>
+          </div>
+        );
+      case 5:
+        return (
+          <div className="major-modal-step">
+            <label>Decision Approval</label>
+            <select value={steps.step5.decisionApproval ?? ""} onChange={(e) => setStepField("step5", { ...steps.step5, decisionApproval: e.target.value })}>
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+            <div style={{ marginTop: 8 }}>
+              <label>Optional notes</label>
+              <textarea value={steps.step5.notes ?? ""} onChange={(e) => setStepField("step5", { ...steps.step5, notes: e.target.value })} rows={3} />
+            </div>
+          </div>
+        );
+      default:
+        return <div style={{ padding: 12 }}>Unknown step</div>;
+    }
   };
 
   const renderProgress = (activeIndex) => {
-    const dots = [1,2,3,4,5];
+    const dots = [1, 2, 3, 4, 5];
     return <div className="major-modal-progress" aria-hidden>{dots.map(d => <span key={d} className={`dot ${d <= activeIndex ? "active" : ""}`} />)}</div>;
   };
 
@@ -1927,76 +2303,130 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = () => {
       <div className="major-modal-topbar" />
       <div className="major-modal-body">
         <div className="major-modal-header-strip"><div className="major-modal-title">Major Offense</div></div>
-        {renderProgress(step)}
-        {step === 1 && (
-          <div className="major-modal-step">
-            <label>Incident Report</label>
-            <textarea placeholder="Write incident report..." value={s1.incidentReport} onChange={(e) => setS1({ incidentReport: e.target.value })} />
-            <div className="major-modal-actions">
-              <button className="btn-back" onClick={onClose}>Back</button>
-              <button className="btn-primary" onClick={saveCurrent}>Save</button>
-            </div>
-          </div>
+        {renderProgress(currentStep)}
+        {message && (
+          <div style={{ padding: 8, color: message.type === "error" ? "#b91c1c" : "#065f46" }}>{message.text}</div>
         )}
-        {step === 2 && (
-          <div className="major-modal-step">
-            <div className="major-modal-committee">
-              <div>
-                <label>Appointed Chair or College Dean</label>
-                <input type="text" value={s2.chairDean} onChange={(e) => setS2(s => ({...s, chairDean: e.target.value}))} />
-              </div>
-              <div>
-                <label>Faculty Member</label>
-                <input type="text" value={s2.facultyMember} onChange={(e) => setS2(s => ({...s, facultyMember: e.target.value}))} />
-              </div>
-            </div>
-            <div className="major-modal-actions">
-              <button className="btn-back" onClick={onClose}>Back</button>
-              <button className="btn-primary" onClick={saveCurrent}>Save</button>
-            </div>
-          </div>
-        )}
-        {step === 3 && (
-          <div className="major-modal-step">
-            <div className="major-modal-checkboxes">
-              <label><input type="checkbox" checked={s3.complainant} onChange={(e) => setS3(s => ({...s, complainant: e.target.checked}))} /> Complainant</label>
-            </div>
-            <div className="major-modal-actions">
-              <button className="btn-back" onClick={onClose}>Back</button>
-              <button className="btn-primary" onClick={saveCurrent}>Save</button>
-            </div>
-          </div>
-        )}
-        {step === 4 && (
-          <div className="major-modal-step">
-            <label>Choose a Sanction</label>
-            <div className="sanction-row">
-              <select className="sanction-select" value={s4.sanction} onChange={(e) => setS4({ sanction: e.target.value }) }>
-                <option value="">Select</option>
-                <option value="Suspension">Suspension</option>
-                <option value="Exclusion">Exclusion</option>
-              </select>
-            </div>
-            <div className="major-modal-actions">
-              <button className="btn-back" onClick={onClose}>Back</button>
-              <button className="btn-primary" onClick={saveCurrent}>Save</button>
-            </div>
-          </div>
-        )}
-        {step === 5 && (
-          <div className="major-modal-step">
-            <label>Decision Approval</label>
-            <select value={s5.decisionApproval} onChange={(e) => setS5({ decisionApproval: e.target.value }) }>
-              <option value="">Select</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
-            </select>
-            <div className="major-modal-actions">
-              <button className="btn-back" onClick={onClose}>Back</button>
-              <button className="btn-primary" onClick={saveCurrent}>Done</button>
-            </div>
-          </div>
-        )}
+        {renderStepBody()}
+        <div className="major-modal-actions" style={{ marginTop: 12 }}>
+          <button className="btn-back" onClick={handleBackClick} disabled={saving}>Back</button>
+          <button
+            className="btn-primary"
+            onClick={handleSaveClick}
+            disabled={saving || loading}
+            title={currentStep >= 5 ? "Save and finish" : "Save and continue"}
+          >
+            {saving ? "Saving…" : (currentStep >= 5 ? "Done" : "Save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MajorOffenseFormModal: read-only display of saved steps, with Edit + Close actions.
+
+function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, onEdit = () => {} }) {
+  // record.data expected shape: { step1: {...}, step2: {...}, step3: {...}, step4: {...}, step5: {...} }
+  const data = record.data || {};
+  const s1 = data.step1 || {};
+  const s2 = data.step2 || {};
+  const s3 = data.step3 || {};
+  const s4 = data.step4 || {};
+  const s5 = data.step5 || {};
+
+  const containerStyle = { width: 700, maxWidth: "calc(100vw - 30px)", padding: 12, fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto" };
+  const heading = { fontSize: 16, fontWeight: 700, marginBottom: 8 };
+  const section = { borderTop: "1px solid #eee", paddingTop: 10, marginTop: 10 };
+  const labelStyle = { fontSize: 12, color: "#010202ff" };
+  const valueStyle = { fontSize: 14, color: "#111827", whiteSpace: "pre-wrap", marginTop: 6 };
+
+  return (
+    <div style={containerStyle} aria-label="Major Offense Form">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Major Offense Form</div>
+          <div style={{ fontSize: 13, color: "#000000ff", marginTop: 4 }}>{student.name ?? (student.student_name ?? "")} {student.student_id ? `• ${student.student_id}` : ""}</div>
+        </div>
+        <div style={{ display: "flex", gap: 2 }}>
+          <button onClick={onEdit} style={{ padding: "12px 12px", background: "#7c5101ff", color: "#fff", borderRadius: 6, border: "none", cursor: "pointer" }}>Edit</button>
+          <button onClick={onClose} style={{ padding: "8px 12px", background: "#7c5101ff", color: "#fff", borderRadius: 6, border: "none", cursor: "pointer" }}>Close</button>
+        </div>
+      </div>
+
+      <div style={section}>
+        <div style={heading}>Step 1 — Incident Report</div>
+        <div style={labelStyle}>Report</div>
+        <div style={valueStyle}>{s1.incidentReport ?? "—"}</div>
+      </div>
+
+      <div style={section}>
+        <div style={heading}>Step 2 — Committee / Appointments</div>
+        <div style={labelStyle}>Appointed Chair or College Dean</div>
+        <div style={valueStyle}>{s2.chairDean ?? "—"}</div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Faculty Member</div>
+          <div style={valueStyle}>{s2.facultyMember ?? "—"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>SSC Rep</div>
+          <div style={valueStyle}>{s2.sscRep ?? "—"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>DSC Rep</div>
+          <div style={valueStyle}>{s2.dscRep ?? "—"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Guidance</div>
+          <div style={valueStyle}>{s2.guidance ?? "—"}</div>
+        </div>
+      </div>
+
+      <div style={section}>
+        <div style={heading}>Step 3 — Attendance / Testimonies</div>
+        <div style={labelStyle}>Complainant Present</div>
+        <div style={valueStyle}>{s3.complainant ? "Yes" : "No"}</div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Respondent Present</div>
+          <div style={valueStyle}>{s3.respondentPresent ? "Yes" : "No"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Parents Present</div>
+          <div style={valueStyle}>{s3.parentsPresent ? "Yes" : "No"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Witness Testimonies Collected</div>
+          <div style={valueStyle}>{s3.witnessTestimonies ? "Yes" : "No"}</div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Final Statements / Notes</div>
+          <div style={valueStyle}>{s3.finalStatements ?? "—"}</div>
+        </div>
+      </div>
+
+      <div style={section}>
+        <div style={heading}>Step 4 — Sanction</div>
+        <div style={labelStyle}>Selected Sanction</div>
+        <div style={valueStyle}>{s4.sanction ?? "—"}</div>
+      </div>
+
+      <div style={section}>
+        <div style={heading}>Step 5 — Decision Approval</div>
+        <div style={labelStyle}>Approved</div>
+        <div style={valueStyle}>{s5.decisionApproval ?? "—"}</div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}>Notes</div>
+          <div style={valueStyle}>{s5.notes ?? "—"}</div>
+        </div>
       </div>
     </div>
   );
@@ -2053,33 +2483,30 @@ function FilterPopover({ onApply, onClose }) {
 
         <label>
           Section
-          <select value={section} onChange={(e) => setSection(e.target.value)}>
-            <option value="">Any</option>
-            {(sectionOptions || []).map((s, i) => {
-              const label = typeof s === "string" ? s : (s.section ?? s.section_name ?? s.name ?? JSON.stringify(s));
-              return <option key={`sec-${i}`} value={label}>{label}</option>;
-            })}
-          </select>
-        </label>
-
-        <label>
-          Violation
-          <select value={violation} onChange={(e) => setViolation(e.target.value)}>
-            <option value="">Any</option>
-            {(violationOptionsLocal || []).map((v, i) => {
-              if (v === null || v === undefined) return null;
-              if (typeof v === "string" || typeof v === "number") return <option key={`viol-${i}`} value={String(v)}>{String(v)}</option>;
-              const label = v.name ?? v.value ?? v.violation ?? v.label ?? JSON.stringify(v);
-              return <option key={`viol-${i}`} value={String(label)}>{label}</option>;
-            })}
-          </select>
-        </label>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button onClick={() => { onClose(); }}>Close</button>
-        <button onClick={() => apply()}>Apply</button>
-      </div>
-    </div>
-  );
-}
+                    <select value={section} onChange={(e) => setSection(e.target.value)}>
+                      <option value="">Any</option>
+                      {(sectionOptions || []).map((s, i) => {
+                        const label = typeof s === "string" ? s : (s.section ?? s.section_name ?? s.name ?? s.value ?? JSON.stringify(s));
+                        return <option key={`section-${i}`} value={label}>{label}</option>;
+                      })}
+                    </select>
+                  </label>
+          
+                  <label>
+                    Violation
+                    <select value={violation} onChange={(e) => setViolation(e.target.value)}>
+                      <option value="">Any</option>
+                      {(violationOptionsLocal || []).map((v, i) => {
+                        const label = typeof v === "string" ? v : (v.violation ?? v.name ?? v.value ?? JSON.stringify(v));
+                        return <option key={`violation-${i}`} value={label}>{label}</option>;
+                      })}
+                    </select>
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                  <button onClick={apply} style={{ background: "#065f46", color: "#fff", borderRadius: 6, border: "none", padding: "8px 12px" }}>Apply</button>
+                  <button onClick={onClose} style={{ background: "#eee", color: "#111827", borderRadius: 6, border: "none", padding: "8px 12px" }}>Close</button>
+                </div>
+              </div>
+            );
+          }
