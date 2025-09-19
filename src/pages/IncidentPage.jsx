@@ -515,6 +515,7 @@ function IncidentPage({ user }) {
         ),
         pos: null,
         noHeader: false,
+        autoClose: false,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -536,22 +537,23 @@ function IncidentPage({ user }) {
           // user chose Minor but business rule says escalate; we'll honor escalation automatically
           setFormData((p) => ({ ...p, type: "Major", offense: "Major", violation: "", sanction: "" }));
           fetchViolationsAndSanctions("Major");
-          setModal({
-            open: true,
-            title: "Escalation to Major",
-            content: (
-              <div style={{ padding: 12 }}>
-                <p>
-                  This student already has 2 or more prior Minor offenses. The next
-                  incident will be processed as a <strong>Major</strong> offense.
-                </p>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button onClick={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}>OK</button>
+            setModal({
+              open: true,
+              title: "Escalation to Major",
+              content: (
+                <div style={{ padding: 12 }}>
+                  <p>
+                    This student already has 2 or more prior Minor offenses. The next
+                    incident will be processed as a <strong>Major</strong> offense.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button onClick={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}>OK</button>
+                  </div>
                 </div>
-              </div>
-            ),
+              ),
             pos: null,
             noHeader: false,
+            closeOnOutsideClick: true,
           });
         } else {
           setFormData((p) => ({ ...p, type: "Minor", offense: next.offense, violation: "", sanction: "" }));
@@ -598,20 +600,30 @@ function IncidentPage({ user }) {
     };
 
     const result = await createIncident(payload);
-    if (result.success) {
-      // after saving, we want next incident to be auto-computed again
-      setAutoAssigned(true);
-      setFormData({ type: "", sanction: "", violation: "", offense: "1st" });
-      setModal({
-        open: true,
-        title: "Success",
-        content: <div style={{ padding: 12 }}><p>Violation saved for {selectedStudent.name}.</p></div>,
-        pos: null,
-        noHeader: false,
-      });
-    } else {
-      alert("Failed to save incident: " + (result.message || "unknown"));
-    }
+if (result.success) {
+  // after saving, we want next incident to be auto-computed again
+  setAutoAssigned(true);
+  setFormData({ type: "", sanction: "", violation: "", offense: "1st" });
+  setModal({
+    open: true,
+    title: "Success",
+    content: (
+      <div style={{ padding: 12 }}>
+        <p>Violation saved for {selectedStudent.name}.</p>
+      </div>
+    ),
+    pos: null,
+    noHeader: false,
+  });
+
+  // Auto close after 2 seconds
+  setTimeout(() => {
+    setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+  }, 3000);
+} else {
+  alert("Failed to save incident: " + (result.message || "unknown"));
+}
+
   };
 
   const handleConfigure = (student) => {
@@ -987,29 +999,38 @@ function IncidentPage({ user }) {
         });
         break;
       case "Delete":
-        if (window.confirm("Delete this incident?")) {
-          (async () => {
-            const id = row.id ?? row.incident_id ?? row.incidentId;
-            const result = await deleteIncident(id);
-            if (result && result.success) {
-              setModal({
-                open: true,
-                title: "Deleted",
-                content: (
-                  <div style={{ padding: 12 }}>
-                    <p>Incident deleted successfully.</p>
-                  </div>
-                ),
-                pos: null,
-                noHeader: false,
-              });
-            } else {
-              const errMsg = result && (result.message || result.error) ? (result.message || result.error) : "Failed to delete incident.";
-              alert("Delete failed: " + errMsg);
-            }
-          })();
-        }
-        break;
+  if (window.confirm("Delete this incident?")) {
+    (async () => {
+      const id = row.id ?? row.incident_id ?? row.incidentId;
+      const result = await deleteIncident(id);
+      if (result && result.success) {
+        setModal({
+          open: true,
+          title: "Deleted",
+          content: (
+            <div style={{ padding: 12 }}>
+              <p>Incident deleted successfully.</p>
+            </div>
+          ),
+          pos: null,
+          noHeader: false,
+        });
+
+        // Auto close after 2 seconds
+        setTimeout(() => {
+          setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+        }, 3000);
+      } else {
+        const errMsg =
+          result && (result.message || result.error)
+            ? result.message || result.error
+            : "Failed to delete incident.";
+        alert("Delete failed: " + errMsg);
+      }
+    })();
+  }
+  break;
+
       // Replace the "Process" branch inside handleMenuAction switch(...) with this:
 
 case "Process":
@@ -1211,12 +1232,7 @@ case "Process":
 
       {/* Header */}
       <div className="incident-header-bar">
-        <h1 className="incident-title">Student Management ▸ Incident Management</h1>
-        <div className="user-account">
-          <img src="/rcclogo.png" alt="RCC Logo" className="account-logo" />
-          <span className="account-name">{user?.username || user?.email || user?.role || "User"}</span>
-          <span className="dropdown-icon">▾</span>
-        </div>
+        <h1 className="incident-title">Student Incident Management</h1>
       </div>
 
       {/* Violation Entry */}
