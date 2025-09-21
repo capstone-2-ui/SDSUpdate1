@@ -1142,3 +1142,32 @@ select.eif-input:focus {
   }
 }
 
+.inline-filter-options {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  align-items: center;
+}
+
+.inline-filter-options button {
+  background: #eee;
+  color: #111827;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.inline-filter-options button.active {
+  background: #111827;
+  color: #fff;
+}
+
+.inline-filter-options select {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}

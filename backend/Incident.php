@@ -50,28 +50,47 @@ if ($method === "POST") {
             exit;
         }
 
-        // Fetch student's email from student_db
-        $stmt = $conn->prepare("SELECT email FROM student_db.students WHERE student_id = ? LIMIT 1");
+        // -------------------------
+        // Fetch student's email from the central student_db (same as Student.php)
+        // -------------------------
+        $studentDbName = "student_db";
+        $sconn = new mysqli($host, $user, $pass, $studentDbName);
+        if ($sconn->connect_error) {
+            http_response_code(500);
+            echo json_encode(["success" => false, "message" => "Failed to connect to student_db: " . $sconn->connect_error]);
+            exit;
+        }
+
+        $stmt = $sconn->prepare("SELECT email FROM students WHERE student_id = ? LIMIT 1");
         if (!$stmt) {
             http_response_code(500);
-            echo json_encode(["success" => false, "message" => "Failed to prepare statement to get email: " . $conn->error]);
+            echo json_encode(["success" => false, "message" => "Prepare failed when fetching student email: " . $sconn->error]);
+            $sconn->close();
             exit;
         }
         $stmt->bind_param("s", $studentId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $student = $result->fetch_assoc();
+        if (!$stmt->execute()) {
+            http_response_code(500);
+            echo json_encode(["success" => false, "message" => "Query failed when fetching student email: " . $stmt->error]);
+            $stmt->close();
+            $sconn->close();
+            exit;
+        }
+        $res = $stmt->get_result();
+        $studentRow = $res->fetch_assoc();
         $stmt->close();
+        // Close student DB connection early (we don't need it anymore)
+        $sconn->close();
 
-        if (!$student || empty($student['email'])) {
+        if (!$studentRow || empty($studentRow['email'])) {
             http_response_code(404);
-            echo json_encode(["success" => false, "message" => "Student email not found or is empty."]);
+            echo json_encode(["success" => false, "message" => "Student email not found for ID: " . htmlspecialchars($studentId)]);
             exit;
         }
 
-        $to = $student['email'];
+        $to = $studentRow['email'];
         $subject = "Notification of Incident Report";
-        
+
         $message = "Dear Student,\n\nThis is to inform you that an incident report has been filed concerning you.\n\n";
         if (!empty($incidentDetails)) {
             $message .= "Incident Details:\n";
@@ -82,21 +101,59 @@ if ($method === "POST") {
         }
         $message .= "\nPlease visit the student affairs office for more details.\n\nSincerely,\nStudent Discipline Office";
 
-        $headers = "From: studentdiscipline2@gmail.com";
+        // ------------ Robust PHPMailer loader + send (supports namespaced OR non-namespaced PHPMailer) ------------
+        $phpmailerDir = __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR;
 
-        // Load PHPMailer classes (paths adjusted if needed)
-        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'Exception.php';
-        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'PHPMailer.php';
-        require_once __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR . 'SMTP.php';
+        $triedFiles = [];
+        if (file_exists($phpmailerDir . 'Exception.php')) {
+            require_once $phpmailerDir . 'Exception.php';
+            $triedFiles[] = 'Exception.php';
+        }
+        if (file_exists($phpmailerDir . 'SMTP.php')) {
+            require_once $phpmailerDir . 'SMTP.php';
+            $triedFiles[] = 'SMTP.php';
+        }
+        // Try commons: prefer PHPMailer.php (the typical entry file)
+        $possibleFiles = ['PHPMailer.php', 'PHPMailer.php.bak-20250918110801'];
+        foreach ($possibleFiles as $f) {
+            $full = $phpmailerDir . $f;
+            if (file_exists($full)) {
+                require_once $full;
+                $triedFiles[] = $f;
+                break;
+            }
+        }
 
-        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
         try {
+            $mail = null;
+            $isNamespaced = false;
+
+            if (class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                $isNamespaced = true;
+            } elseif (class_exists('PHPMailer')) {
+                $mail = new PHPMailer(true);
+                $isNamespaced = false;
+            } else {
+                http_response_code(500);
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'PHPMailer not found. Checked: ' . implode(', ', $triedFiles)
+                ]);
+                exit;
+            }
+
+            // SMTP configuration
             $mail->isSMTP();
             $mail->Host       = 'smtp.gmail.com';
             $mail->SMTPAuth   = true;
-            $mail->Username   = 'studentdiscipline2@gmail.com'; // your gmail
-            $mail->Password   = 'nmbu qare yivj mxjr';           // Google App Password
-            $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Username   = 'studentdiscipline2@gmail.com';
+            $mail->Password   = 'nmbu qare yivj mxjr'; // keep this secure in production
+            if ($isNamespaced && defined('PHPMailer\\PHPMailer\\PHPMailer::ENCRYPTION_STARTTLS')) {
+                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            } else {
+                $mail->SMTPSecure = 'tls';
+            }
             $mail->Port       = 587;
 
             $mail->setFrom('studentdiscipline2@gmail.com', 'Student Discipline Office');
@@ -107,10 +164,18 @@ if ($method === "POST") {
             $mail->Body = $message;
 
             $mail->send();
+
             echo json_encode(['success' => true, 'message' => 'Notification has been sent successfully to ' . $to]);
-        } catch (PHPMailer\PHPMailer\Exception $e) {
+        } catch (Throwable $e) {
             http_response_code(500);
-            echo json_encode(['success' => false, 'message' => 'Mailer Error: ' . $mail->ErrorInfo]);
+            $errorInfo = '';
+            if (isset($mail) && is_object($mail) && property_exists($mail, 'ErrorInfo')) {
+                $errorInfo = ' ' . ($mail->ErrorInfo ?? '');
+            }
+            echo json_encode([
+                'success' => false,
+                'message' => 'Mailer Error: ' . $e->getMessage() . $errorInfo,
+            ]);
         }
         exit;
     }

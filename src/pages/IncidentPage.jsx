@@ -26,7 +26,6 @@ function IncidentPage({ user }) {
   const [violationOptions, setViolationOptions] = useState([]);
   const [sanctionOptions, setSanctionOptions] = useState([]);
   const [strandOptions, setStrandOptions] = useState([]);
-
   // New: map id/value -> human label for resolving stored ids (and for showing readable values)
   const [violationLookup, setViolationLookup] = useState({});
 
@@ -43,7 +42,6 @@ function IncidentPage({ user }) {
   const [modal, setModal] = useState({ open: false, title: "", content: null, pos: null, noHeader: false });
   const [menuOpenIndex, setMenuOpenIndex] = useState(null);
   const [appliedFilters, setAppliedFilters] = useState({
-    alpha: null,
     department: "",
     grade: "",
     section: "",
@@ -1380,31 +1378,23 @@ case "Process":
 
           <button ref={exportBtnRef} className="export-btn" onClick={handleExport}>Export</button>
 
-          <button className="filter-btn" onClick={(e) => {
-            const anchor = e.currentTarget;
-            const openPopover = (pos) => {
-              setModal({
-                open: true,
-                title: "",
-                noHeader: true,
-                pos,
-                content: <FilterPopover onApply={(filters) => { setAppliedFilters(filters); setModal({ open: false, title: "", content: null, pos: null, noHeader: false }); }} onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })} />,
-              });
-            };
-            const rect = anchor.getBoundingClientRect();
-            const popoverWidth = 360;
-            const popoverHeight = 420;
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            const scrollX = window.scrollX || window.pageXOffset;
-            const scrollY = window.scrollY || window.pageYOffset;
-            let left = rect.right - popoverWidth + scrollX;
-            let top = rect.top + scrollY - popoverHeight - 8;
-            if (top < 8) top = rect.bottom + scrollY + 8;
-            if (left < 8 + scrollX) left = rect.left + scrollX;
-            if (left + popoverWidth > vw - 8 + scrollX) left = Math.max(8 + scrollX, vw - popoverWidth - 8 + scrollX);
-            if (top + popoverHeight > vh - 8 + scrollY) top = Math.max(8 + scrollY, vh - popoverHeight - 8 + scrollY);
-            openPopover({ left, top });
+          <button className="filter-btn" onClick={() => {
+            setModal({
+              open: true,
+              title: "Filter Incidents",
+              noHeader: true, // The filter component has its own header and buttons
+              pos: null, // Render as a centered modal
+              content: (
+                <FilterPopover
+                  initialFilters={appliedFilters}
+                  onApply={(filters) => {
+                    setAppliedFilters(filters);
+                    setModal({ open: false, title: "", content: null, pos: null, noHeader: false });
+                  }}
+                  onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
+                />
+              ),
+            });
           }}>Filter</button>
         </div>
       </div>
@@ -1485,6 +1475,88 @@ case "Process":
 }
 
 export default IncidentPage;
+
+function FilterPopover({ onApply, onClose, initialFilters }) {
+  const [violation, setViolation] = useState(initialFilters.violation);
+
+  const [violationOptions, setViolationOptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const BACKEND_BASE = "http://localhost/SDSUpdate1-main/backend";
+
+  useEffect(() => {
+    setViolation(initialFilters.violation);
+  }, [initialFilters]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchViolations = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${BACKEND_BASE}/Violation.php`);
+        const data = await res.json();
+        if (mounted) {
+          setViolationOptions(Array.isArray(data) ? data : (data?.data ?? []));
+        }
+      } catch (error) {
+        console.error("Failed to fetch violations:", error);
+        if (mounted) {
+          setViolationOptions([]);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchViolations();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleApply = () => {
+    onApply({
+      ...initialFilters,
+      alpha: null,
+      violation
+    });
+    onClose();
+  };
+
+  return (
+    <div style={{ width: '700px' }}>
+      <div style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+        <strong style={{ fontSize: '14px' }}>Filter</strong>
+      </div>
+      <div style={{ marginTop: '1rem' }}>
+        <strong style={{ fontSize: '13px', color: '#333' }}>Violation</strong>
+        <select 
+          value={violation} 
+          onChange={(e) => setViolation(e.target.value)} 
+          disabled={loading}
+          style={{ width: '100%', marginTop: '0.5rem', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+        >
+          <option value="">All Violations</option>
+          {loading ? (
+            <option disabled>Loading...</option>
+          ) : (
+            violationOptions.map((v) => (
+              <option key={v.id} value={v.violation}>
+                {v.violation}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+        <button onClick={onClose} style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: '4px', background: '#f0f0f0' }}>Cancel</button>
+        <button onClick={handleApply} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', background: '#2d6cdf', color: 'white' }}>Apply</button>
+      </div>
+    </div>
+  );
+}
 
 /* -------------------------
    StudentProfileModal - modern professional profile UI used for "View Student Profile"
@@ -2448,81 +2520,4 @@ function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, 
   );
 }
 
-/* -------------------------
-   FilterPopover component (used in page-level Filter button)
-   ------------------------- */
-// continuation - finish FilterPopover and close file
-function FilterPopover({ onApply, onClose }) {
-  const [alpha, setAlpha] = useState(null);
-  const [departmentOptions, setDepartmentOptions] = useState([]);
-  const [gradeOptions, setGradeOptions] = useState([]);
-  const [sectionOptions, setSectionOptions] = useState([]);
-  const [violationOptionsLocal, setViolationOptionsLocal] = useState([]);
-
-  const [department, setDepartment] = useState("");
-  const [grade, setGrade] = useState("");
-  const [section, setSection] = useState("");
-  const [violation, setViolation] = useState("");
-
-  useEffect(() => {/* Implement fetching of options if needed */}, []);
-
-  const toggleAlphaAsc = () => setAlpha((v) => (v === "asc" ? null : "asc"));
-  const toggleAlphaDesc = () => setAlpha((v) => (v === "desc" ? null : "desc"));
-
-  const apply = () => onApply({ alpha, department, grade, section, violation });
-
-  return (
-    <div style={{ width: 340, padding: 12 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button onClick={toggleAlphaAsc} style={{ background: alpha === "asc" ? "#111827" : "#eee", color: alpha === "asc" ? "#fff" : "#111827" }}>A→Z</button>
-        <button onClick={toggleAlphaDesc} style={{ background: alpha === "desc" ? "#111827" : "#eee", color: alpha === "desc" ? "#fff" : "#111827" }}>Z→A</button>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label>
-          Department
-          <select value={department} onChange={(e) => setDepartment(e.target.value)}>
-            <option value="">Any</option>
-            {(departmentOptions || []).map((d, i) => <option key={`dep-${i}`} value={d}>{d}</option>)}
-          </select>
-        </label>
-
-        <label>
-          Grade
-          <select value={grade} onChange={(e) => setGrade(e.target.value)}>
-            <option value="">Any</option>
-            {(gradeOptions || []).map((g, i) => {
-              const label = typeof g === "string" ? g : (g.grade ?? g.name ?? g.value ?? JSON.stringify(g));
-              return <option key={`grade-${i}`} value={label}>{label}</option>;
-            })}
-          </select>
-        </label>
-
-        <label>
-          Section
-                    <select value={section} onChange={(e) => setSection(e.target.value)}>
-                      <option value="">Any</option>
-                      {(sectionOptions || []).map((s, i) => {
-                        const label = typeof s === "string" ? s : (s.section ?? s.section_name ?? s.name ?? s.value ?? JSON.stringify(s));
-                        return <option key={`section-${i}`} value={label}>{label}</option>;
-                      })}
-                    </select>
-                  </label>
-          
-                  <label>
-                    Violation
-                    <select value={violation} onChange={(e) => setViolation(e.target.value)}>
-                      <option value="">Any</option>
-                      {(violationOptionsLocal || []).map((v, i) => {
-                        const label = typeof v === "string" ? v : (v.violation ?? v.name ?? v.value ?? JSON.stringify(v));
-                        return <option key={`violation-${i}`} value={label}>{label}</option>;
-                      })}
-                    </select>
-                  </label>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                  <button onClick={apply} style={{ background: "#065f46", color: "#fff", borderRadius: 6, border: "none", padding: "8px 12px" }}>Apply</button>
-                  <button onClick={onClose} style={{ background: "#eee", color: "#111827", borderRadius: 6, border: "none", padding: "8px 12px" }}>Close</button>
-                </div>
-              </div>
-            );
-          }
+ 
