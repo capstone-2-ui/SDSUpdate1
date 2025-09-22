@@ -1033,20 +1033,27 @@ if (result.success) {
 
 case "Process":
   (async () => {
-    const incidentId = row.id ?? row.incident_id ?? row.incidentId;
-    if (!incidentId) {
-      alert("Missing incident ID for Major Process");
+    // Use the student identifier (backend MajorOffense.php expects student_id)
+    const studentId = row.student_id ?? row.studentId ?? row.id;
+    if (!studentId) {
+      alert("Missing student ID for Major Process");
       setMenuOpenIndex(null);
       return;
     }
 
     try {
-      // fetch the saved major-offense record using the incident ID
-      const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?incident_id=${encodeURIComponent(incidentId)}`);
+      // Query by student_id (not incident_id)
+      const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?student_id=${encodeURIComponent(studentId)}`);
       const json = await resp.json().catch(() => null);
       const record = json?.record ?? null;
-      // determine completed steps: backend provides completed_steps; fall back to counting data keys
-      const completed = record?.completed_steps ?? (record?.data ? Object.keys(record.data).filter(k => record.data[k] !== null && record.data[k] !== undefined && String(record.data[k]).trim() !== "").length : 0);
+
+      // Determine completed steps (prefer completed_steps, fallback to counting non-empty stepN entries)
+      const completed =
+        Number(record?.completed_steps ?? NaN) ||
+        (record?.data ? Object.keys(record.data).filter((k) => {
+          const v = record.data[k];
+          return v !== null && v !== undefined && String(v).trim() !== "";
+        }).length : 0);
 
       if (record && Number(completed) >= 5) {
         // open a read-only form modal that shows the saved steps and allows "Edit"
@@ -2520,4 +2527,3 @@ function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, 
   );
 }
 
- 
