@@ -1033,16 +1033,16 @@ if (result.success) {
 
 case "Process":
   (async () => {
-    const sid = row.student_id ?? row.id ?? row.studentId;
-    if (!sid) {
-      alert("Missing student id for Major Process");
+    const incidentId = row.id ?? row.incident_id ?? row.incidentId;
+    if (!incidentId) {
+      alert("Missing incident ID for Major Process");
       setMenuOpenIndex(null);
       return;
     }
 
     try {
-      // fetch the saved major-offense record (if any)
-      const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?student_id=${encodeURIComponent(sid)}`);
+      // fetch the saved major-offense record using the incident ID
+      const resp = await fetch(`${BACKEND_BASE}/MajorOffense.php?incident_id=${encodeURIComponent(incidentId)}`);
       const json = await resp.json().catch(() => null);
       const record = json?.record ?? null;
       // determine completed steps: backend provides completed_steps; fall back to counting data keys
@@ -1551,12 +1551,12 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
         </select>
       </div>
       <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-        <button onClick={onClose} style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: '4px', background: '#f0f0f0' }}>Cancel</button>
-        <button onClick={handleApply} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', background: '#2d6cdf', color: 'white' }}>Apply</button>
+        <button onClick={onClose} style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: '4px', background: '#774f04ff' , color: 'white' }}>Cancel</button>
+        <button onClick={handleApply} style={{ padding: '6px 12px', border: '1px solide #ccc', borderRadius: '4px', background: '#774f04ff', color: 'white' }}>Apply</button>
       </div>
     </div>
   );
-}
+} 
 
 /* -------------------------
    StudentProfileModal - modern professional profile UI used for "View Student Profile"

@@ -104,7 +104,7 @@ function DashboardPage({ user }) {
 
         {/* Table of Violations */}
         <div className="card">
-          <h3>Total of Students & Violations</h3>
+          <h3>Total of Students Violations</h3>
           <div className="table-scroll-container">
             <table>
               <thead>
