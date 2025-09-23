@@ -14,7 +14,7 @@ export default function GradePage({ user }) {
 
   // set default type to "Junior High School"
   const [formData, setFormData] = useState({ id: null, grade: "", type: "Junior High School" });
-  const [editId, setEditId] = useState(null);
+  const [editId, setEditId] = useState(null); 
 
   // filter modal states
   const [alphabetical, setAlphabetical] = useState("");
@@ -29,7 +29,7 @@ export default function GradePage({ user }) {
   const [uploadProgress, setUploadProgress] = useState({ total: 0, success: 0, failed: 0 });
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  const API_URL = "http://localhost/SDSUpdate1-main/backend/Grade.php"; // adjust path if needed
+  const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Grade.php"; // adjust path if needed
 
   // Confirmation (top-right green toast)
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });

@@ -1,16 +1,28 @@
 <?php
-header("Access-Control-Allow-Origin: http://localhost:3000");
+// dashboard.php
+
+// --- Dynamic CORS Handling ---
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+} else {
+    header("Access-Control-Allow-Origin: http://localhost:3000"); // fallback
+}
+
 header("Access-Control-Allow-Credentials: true");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Database connection - change these if your MySQL user/pass/db differ
-$servername = "localhost";
-$username = "root";
-$password = "";
-// Use the incidents DB we created earlier (change if you prefer a different DB)
-$dbname = "incident_db";
+// Database connection
+$servername = "localhost";    // Change if DB is remote
+$username   = "root";         // Change if needed
+$password   = "";             // Change if needed
+$dbname     = "incident_db";  // Change if needed
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 if ($conn->connect_error) {
@@ -21,7 +33,6 @@ if ($conn->connect_error) {
 
 /**
  * 1) Active Sanction (top 3 by count)
- * We aggregate incidents.sanction text.
  */
 $sanctions = [];
 $sqlSanctions = "SELECT IFNULL(NULLIF(TRIM(sanction),''),'(Unspecified)') AS sanction_type, COUNT(*) AS total
@@ -41,7 +52,6 @@ if ($resS) {
 
 /**
  * 2) Violations per Department/Grade
- * We group by department if present, otherwise by grade; fallback 'Unknown'
  */
 $violationsByDept = [];
 $sqlDept = "SELECT COALESCE(NULLIF(TRIM(department),''), NULLIF(TRIM(grade),''), '(Unknown)') AS label, COUNT(*) AS violations
@@ -60,18 +70,18 @@ if ($resD) {
 
 /**
  * 3) Monthly violations (Jan..Dec)
- * We build full 12-month array and fill in counts from incidents.created_at
  */
 $months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 $monthly = array_map(function($m) { return ["month"=>$m,"total"=>0]; }, $months);
 
-$sqlMonthly = "SELECT MONTH(created_at) AS m, COUNT(*) AS total FROM incidents GROUP BY MONTH(created_at)";
+$sqlMonthly = "SELECT MONTH(created_at) AS m, COUNT(*) AS total 
+               FROM incidents 
+               GROUP BY MONTH(created_at)";
 $resM = $conn->query($sqlMonthly);
 if ($resM) {
     while ($r = $resM->fetch_assoc()) {
         $m = intval($r["m"]);
         if ($m >= 1 && $m <= 12) {
-            // map 1-based month to our months array (0-based index)
             $monthly[$m-1]["total"] = intval($r["total"]);
         }
     }

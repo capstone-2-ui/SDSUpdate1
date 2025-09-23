@@ -1,7 +1,17 @@
 <?php
 // backend/Incident.php
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Credentials: true");
+
+// --- Dynamic CORS Handling ---
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+    header("Access-Control-Allow-Credentials: true");
+}
+
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
@@ -16,8 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $host = "localhost";
 $user = "root";
 $pass = "";
-
-// <-- changed DB name to incident_db so table includes grade/section columns
 $db   = "incident_db";
 
 $conn = new mysqli($host, $user, $pass, $db);
@@ -51,7 +59,7 @@ if ($method === "POST") {
         }
 
         // -------------------------
-        // Fetch student's email from the central student_db (same as Student.php)
+        // Fetch student's email from the central student_db
         // -------------------------
         $studentDbName = "student_db";
         $sconn = new mysqli($host, $user, $pass, $studentDbName);
@@ -79,7 +87,6 @@ if ($method === "POST") {
         $res = $stmt->get_result();
         $studentRow = $res->fetch_assoc();
         $stmt->close();
-        // Close student DB connection early (we don't need it anymore)
         $sconn->close();
 
         if (!$studentRow || empty($studentRow['email'])) {
@@ -101,7 +108,7 @@ if ($method === "POST") {
         }
         $message .= "\nPlease visit the student affairs office for more details.\n\nSincerely,\nStudent Discipline Office";
 
-        // ------------ Robust PHPMailer loader + send (supports namespaced OR non-namespaced PHPMailer) ------------
+        // ------------ PHPMailer Loader + Send ------------
         $phpmailerDir = __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR;
 
         $triedFiles = [];
@@ -113,7 +120,6 @@ if ($method === "POST") {
             require_once $phpmailerDir . 'SMTP.php';
             $triedFiles[] = 'SMTP.php';
         }
-        // Try commons: prefer PHPMailer.php (the typical entry file)
         $possibleFiles = ['PHPMailer.php', 'PHPMailer.php.bak-20250918110801'];
         foreach ($possibleFiles as $f) {
             $full = $phpmailerDir . $f;
@@ -148,7 +154,7 @@ if ($method === "POST") {
             $mail->Host       = 'smtp.gmail.com';
             $mail->SMTPAuth   = true;
             $mail->Username   = 'studentdiscipline2@gmail.com';
-            $mail->Password   = 'nmbu qare yivj mxjr'; // keep this secure in production
+            $mail->Password   = 'nmbu qare yivj mxjr'; // ⚠️ secure properly
             if ($isNamespaced && defined('PHPMailer\\PHPMailer\\PHPMailer::ENCRYPTION_STARTTLS')) {
                 $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
             } else {
@@ -180,10 +186,10 @@ if ($method === "POST") {
         exit;
     }
 
+    // Save incident
     $studentId  = $data["id"] ?? ($data["student_id"] ?? "");
     $name       = $data["name"] ?? "";
     $department = $data["department"] ?? "";
-    // new: read grade from payload
     $grade      = $data["grade"] ?? "";
     $year       = $data["year"] ?? "";
     $section    = $data["section"] ?? "";
@@ -192,7 +198,6 @@ if ($method === "POST") {
     $violation  = $data["violation"] ?? "";
     $sanction   = $data["sanction"] ?? "";
 
-    // include grade in the INSERT columns/placeholders and bind params
     $stmt = $conn->prepare("INSERT INTO incidents (student_id, name, department, grade, year, section, type, offense, violation, sanction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->bind_param("ssssssssss", $studentId, $name, $department, $grade, $year, $section, $type, $offense, $violation, $sanction);
     if ($stmt->execute()) {
@@ -206,13 +211,11 @@ if ($method === "POST") {
     }
 }
 elseif ($method === "GET") {
-    // If client provides ?type=Minor (or Major) we return violations and/or sanctions.
     if (isset($_GET['type'])) {
         $type = $conn->real_escape_string($_GET['type']);
-        $kind = $_GET['kind'] ?? ''; // optional: 'violations' or 'sanctions'
+        $kind = $_GET['kind'] ?? '';
         $response = [];
 
-        // Fetch violations when requested or when no specific kind provided
         if ($kind === '' || $kind === 'violations') {
             $response['violations'] = [];
             $sql = "SELECT id, violation AS name FROM violation_db.violations WHERE type='" . $type . "'";
@@ -224,7 +227,6 @@ elseif ($method === "GET") {
             }
         }
 
-        // Fetch sanctions when requested or when no specific kind provided
         if ($kind === '' || $kind === 'sanctions') {
             $response['sanctions'] = [];
             $sql2 = "SELECT id, sanction AS name FROM sanction_db.sanctions WHERE type='" . $type . "'";
@@ -236,17 +238,15 @@ elseif ($method === "GET") {
             }
         }
 
-        // If client asked for a single kind, return that array directly for compatibility
         if ($kind === 'violations') {
             echo json_encode($response['violations']);
         } elseif ($kind === 'sanctions') {
             echo json_encode($response['sanctions']);
         } else {
-            echo json_encode($response); // both lists
+            echo json_encode($response);
         }
         exit;
     } else {
-        // Default: return incidents list
         $result = $conn->query("SELECT * FROM incidents ORDER BY created_at DESC");
         $incidents = [];
         while ($row = $result->fetch_assoc()) {
@@ -266,7 +266,6 @@ elseif ($method === "PUT") {
     $studentId  = $data["student_id"] ?? ($data["id"] ?? "");
     $name       = $data["name"] ?? "";
     $department = $data["department"] ?? "";
-    // new: include grade when updating
     $grade      = $data["grade"] ?? "";
     $year       = $data["year"] ?? "";
     $section    = $data["section"] ?? "";
@@ -275,7 +274,6 @@ elseif ($method === "PUT") {
     $violation  = $data["violation"] ?? "";
     $sanction   = $data["sanction"] ?? "";
 
-    // include grade in the update set and bind params accordingly
     $stmt = $conn->prepare("UPDATE incidents SET student_id=?, name=?, department=?, grade=?, year=?, section=?, type=?, offense=?, violation=?, sanction=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
     $stmt->bind_param("ssssssssssi", $studentId, $name, $department, $grade, $year, $section, $type, $offense, $violation, $sanction, $id);
     if ($stmt->execute()) {

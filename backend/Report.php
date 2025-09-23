@@ -7,9 +7,19 @@ $DB_NAME = 'report_db';
 $DB_USER = 'root';
 $DB_PASS = '';
 
-// === HEADERS ===
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
-header("Access-Control-Allow-Origin: $origin");
+// === CORS HEADERS ===
+$allowed_origins = [
+  "http://localhost:3000",
+  "http://192.168.100.88:3000"
+];
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+  header("Access-Control-Allow-Origin: $origin");
+} else {
+  header("Access-Control-Allow-Origin: http://localhost:3000"); // fallback
+}
+
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");

@@ -44,7 +44,7 @@ export default function UserPage({ user }) {
 
   // ---- FETCH USERS ----
   const fetchUsers = () => {
-    fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
+    fetch("http://192.168.100.88/SDSUpdate1-main/backend/user.php", {
       credentials: "include",
     })
       .then(async (res) => {
@@ -93,7 +93,7 @@ export default function UserPage({ user }) {
       action: "add",
     };
 
-    fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
+    fetch("http://192.168.100.88/SDSUpdate1-main/backend/user.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -140,7 +140,7 @@ export default function UserPage({ user }) {
       action: "update",
     };
     
-    fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
+    fetch("http://192.168.100.88/SDSUpdate1-main/backend/user.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -165,7 +165,7 @@ export default function UserPage({ user }) {
   // ---- DELETE ----
   const handleDelete = (userId) => {
     if (window.confirm("Are you sure you want to delete this user?")) {
-      fetch("http://localhost/SDSUpdate1-main/backend/user.php", {
+      fetch("http://192.168.100.88/SDSUpdate1-main/backend/user.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: userId, action: "delete" }),

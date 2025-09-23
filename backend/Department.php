@@ -1,8 +1,18 @@
 <?php
 // Department.php
+session_start();
 
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Credentials: true");
+// --- CORS setup (support localhost and LAN IP) ---
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+    header("Access-Control-Allow-Credentials: true");
+}
+
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
@@ -11,7 +21,7 @@ header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers
 $servername = "localhost";
 $username   = "root";      // change if needed
 $password   = "";          // change if needed
-$dbname     = "department_db";       // change to your database name
+$dbname     = "department_db";  // change to your database name
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
@@ -97,3 +107,4 @@ elseif ($method === "DELETE") {
 }
 
 $conn->close();
+?>

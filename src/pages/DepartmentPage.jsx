@@ -27,7 +27,7 @@ export default function DepartmentPage({ user }) {
   const [uploadProgress, setUploadProgress] = useState({ total: 0, success: 0, failed: 0 });
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  const API_URL = "http://localhost/SDSUpdate1-main/backend/Department.php"; // adjust path if needed
+  const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Department.php"; // adjust path if needed
 
   // Confirmation (top-right green toast)
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });

@@ -1,24 +1,30 @@
 <?php
 session_start();
 
-// Allow CORS with credentials: reflect origin and allow credentials
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Credentials: true");
-// Allow GET here so frontend can query session on app load
+// --- CORS setup (support localhost and LAN IP) ---
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+    header("Access-Control-Allow-Credentials: true");
+}
+
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Content-Type: application/json; charset=UTF-8");
 
+// Handle preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    // preflight needs to send same CORS headers
     http_response_code(200);
     exit;
 }
 
-// NEW: allow a GET request to return current session user (so frontend can restore login)
+// --- Return current session user on GET ---
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if (isset($_SESSION['current_user']) && is_array($_SESSION['current_user'])) {
-        // return the stored session user object
         echo json_encode(["success" => true, "user" => $_SESSION['current_user']]);
     } else {
         echo json_encode(["success" => false, "message" => "No active session"]);
@@ -26,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
+// --- DB connection ---
 $servername = "localhost";
 $username   = "root";
 $password   = "";
@@ -38,6 +45,7 @@ if ($conn->connect_error) {
     exit;
 }
 
+// --- Get request body ---
 $rawInput = file_get_contents("php://input");
 $data = json_decode($rawInput, true);
 
@@ -49,6 +57,7 @@ if (!is_array($data) || empty($data["email"]) || empty($data["password"])) {
 $email    = $conn->real_escape_string($data["email"]);
 $password = $data["password"];
 
+// --- Check user ---
 $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = ?");
 $stmt->bind_param("s", $email);
 $stmt->execute();
@@ -58,10 +67,9 @@ if ($result && $result->num_rows > 0) {
     $user = $result->fetch_assoc();
 
     if (hash_equals($user['password'], hash('sha256', $password))) {
-        // produce a username default from email if not present
         $usernameFromEmail = explode('@', $user['email'])[0];
 
-        // Ensure user_profiles table exists (lightweight)
+        // Ensure user_profiles table exists
         $createTableSql = "
         CREATE TABLE IF NOT EXISTS user_profiles (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -74,7 +82,7 @@ if ($result && $result->num_rows > 0) {
         ";
         $conn->query($createTableSql);
 
-        // Upsert profile into user_profiles (check exist then insert/update)
+        // Upsert profile
         $pStmt = $conn->prepare("SELECT id FROM user_profiles WHERE email = ?");
         $pStmt->bind_param("s", $user['email']);
         $pStmt->execute();
@@ -94,10 +102,10 @@ if ($result && $result->num_rows > 0) {
         }
         $pStmt->close();
 
-        // set session current user
+        // Save to session
         $_SESSION['current_user'] = [
-            "email" => $user['email'],
-            "role"  => $user['role'],
+            "email"    => $user['email'],
+            "role"     => $user['role'],
             "username" => $usernameToStore
         ];
 
@@ -106,9 +114,9 @@ if ($result && $result->num_rows > 0) {
             "success" => true,
             "message" => "Login successful",
             "user" => [
-                "id"    => $user['id'],
-                "email" => $user['email'],
-                "role"  => $user['role'],
+                "id"       => $user['id'],
+                "email"    => $user['email'],
+                "role"     => $user['role'],
                 "username" => $usernameToStore
             ]
         ]);

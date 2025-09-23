@@ -4,9 +4,19 @@
 
 session_start();
 
-// CORS: reflect allowed origin if sent by browser, otherwise allow http://localhost:3000 for dev
-$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'http://localhost:3000';
-header("Access-Control-Allow-Origin: $origin");
+// CORS: allow localhost and LAN IP
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+} else {
+    // fallback (for dev tools or direct API testing)
+    header("Access-Control-Allow-Origin: http://localhost:3000");
+}
+
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");

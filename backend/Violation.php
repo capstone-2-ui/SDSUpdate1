@@ -1,21 +1,36 @@
 <?php
 // Violation.php
-header("Access-Control-Allow-Origin: http://localhost:3000");
+
+// --- Dynamic CORS Handling ---
+$allowed_origins = [
+    "http://localhost:3000",
+    "http://192.168.100.88:3000"
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {
+    header("Access-Control-Allow-Origin: " . $_SERVER['HTTP_ORIGIN']);
+} else {
+    header("Access-Control-Allow-Origin: http://localhost:3000"); // fallback
+}
+
 header("Access-Control-Allow-Credentials: true");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
 // Database connection
-$servername = "localhost";
-$username   = "root";      // change if needed
-$password   = "";          // change if needed
-$dbname     = "violation_db"; // change if needed
+$servername = "localhost";       // Change if DB is hosted elsewhere
+$username   = "root";            // Change if needed
+$password   = "";                // Change if needed
+$dbname     = "violation_db";    // Change to your database name
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
 if ($conn->connect_error) {
-    die(json_encode(["success" => false, "message" => "Connection failed: " . $conn->connect_error]));
+    die(json_encode([
+        "success" => false,
+        "message" => "Connection failed: " . $conn->connect_error
+    ]));
 }
 
 // Handle request method
@@ -84,3 +99,4 @@ elseif ($method === "DELETE") {
 }
 
 $conn->close();
+?>

@@ -25,7 +25,7 @@ function DashboardPage({ user }) {
     const fetchDashboard = async () => {
       setLoading(true);
       try {
-        const res = await fetch("http://localhost/SDSUpdate1-main/backend/Dashboard.php");
+        const res = await fetch("http://192.168.100.88/SDSUpdate1-main/backend/Dashboard.php");
         const data = await res.json();
         // Backend returns arrays shaped as:
         // { sanctions: [{name, value}], violationsByDept: [{department, violations}], monthlyViolations: [{month, total}] }

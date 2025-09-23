@@ -20,12 +20,7 @@ register_shutdown_function(function () {
         echo json_encode([
             "success" => false,
             "message" => "A fatal server error occurred. See 'error' for details.",
-            "error"   => [
-                "type"    => $error['type'],
-                "message" => $error['message'],
-                "file"    => $error['file'],
-                "line"    => $error['line'],
-            ],
+            "error"   => $error,
         ]);
         exit;
     }
@@ -60,6 +55,21 @@ require_once __DIR__ . '/PHPMailer/Exception.php';
 require_once __DIR__ . '/PHPMailer/PHPMailer.php';
 require_once __DIR__ . '/PHPMailer/SMTP.php';
 
+// ========== DB CONNECTION ==========
+$servername = "localhost";   // change if DB is remote (e.g. 192.168.100.88)
+$username   = "root";
+$password   = "";
+$dbname     = "incident_db";
+
+$conn = new mysqli($servername, $username, $password, $dbname);
+if ($conn->connect_error) {
+    http_response_code(500);
+    echo json_encode(["success" => false, "message" => "Database connection failed: " . $conn->connect_error]);
+    ob_end_flush();
+    exit;
+}
+// ==================================
+
 $raw = file_get_contents("php://input");
 $data = json_decode($raw, true);
 
@@ -70,14 +80,41 @@ if (!is_array($data)) {
     exit;
 }
 
-$incidentDetails = $data['incident'] ?? [];
+// We expect at least student_id
+$studentId = $data['student_id'] ?? null;
+if (!$studentId) {
+    http_response_code(400);
+    echo json_encode(["success" => false, "message" => "Missing student_id"]);
+    ob_end_flush();
+    exit;
+}
 
+// Fetch incident + student details from DB
+$sql = "SELECT i.type, i.violation, i.sanction, i.offense,
+               s.name, s.student_id, s.email, s.parent_email, s.guardian_email
+        FROM incidents i
+        JOIN students s ON i.student_id = s.student_id
+        WHERE s.student_id = ? 
+        ORDER BY i.created_at DESC LIMIT 1";
 
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("s", $studentId);
+$stmt->execute();
+$result = $stmt->get_result();
+$incidentDetails = $result->fetch_assoc();
+$stmt->close();
+$conn->close();
+
+if (!$incidentDetails) {
+    http_response_code(404);
+    echo json_encode(["success" => false, "message" => "No incident found for student_id: $studentId"]);
+    ob_end_flush();
+    exit;
+}
+
+// Determine recipient email
 $recipientEmail = null;
-$emailKeys = [
-    "email", "parent_email", "guardian_email", "parentEmail", "guardianEmail",
-    "email_address", "guardianEmailAddress", "contact_email", "contact", "student_email"
-];
+$emailKeys = ["email", "parent_email", "guardian_email"];
 foreach ($emailKeys as $key) {
     if (!empty($incidentDetails[$key]) && filter_var($incidentDetails[$key], FILTER_VALIDATE_EMAIL)) {
         $recipientEmail = $incidentDetails[$key];
@@ -87,11 +124,7 @@ foreach ($emailKeys as $key) {
 
 if (!$recipientEmail) {
     http_response_code(400);
-    echo json_encode([
-        "success" => false,
-        "message" => "A valid recipient email address was not found in the provided data. Please ensure the student record has an email.",
-        "debug_data" => $incidentDetails // for debugging on the client
-    ]);
+    echo json_encode(["success" => false, "message" => "No valid email found for this student"]);
     ob_end_flush();
     exit;
 }
@@ -102,74 +135,57 @@ if (!$recipientEmail) {
 $mail = new PHPMailer(true);
 
 try {
-    // Server settings
-    $mail->SMTPDebug  = SMTP::DEBUG_SERVER; // Enable verbose debug output
-    $mail->Debugoutput = 'html'; // Display output as HTML
+    $mail->SMTPDebug  = SMTP::DEBUG_SERVER; 
+    $mail->Debugoutput = 'html';
 
     $mail->isSMTP();
     $mail->Host       = 'smtp.gmail.com';
     $mail->SMTPAuth   = true;
     $mail->Username   = 'studentdiscipline2@gmail.com';
-    $mail->Password   = 'nmbu qare yivj mxjr'; // IMPORTANT: Use a Gmail App Password here
+    $mail->Password   = 'nmbu qare yivj mxjr'; 
     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port       = 587;
 
-    // Recipients
     $mail->setFrom('studentdiscipline2@gmail.com', 'Student Discipline Office');
     $mail->addAddress($recipientEmail);
 
-    // Content
     $mail->isHTML(true);
     $mail->Subject = 'Notification of Incident Report';
 
-    $studentName = htmlspecialchars($incidentDetails['name'] ?? 'Student');
-    $studentIdNum = htmlspecialchars($incidentDetails['student_id'] ?? ($incidentDetails['id'] ?? 'N/A'));
-    $dateStr = date('F j, Y');
+    $studentName  = htmlspecialchars($incidentDetails['name'] ?? 'Student');
+    $studentIdNum = htmlspecialchars($incidentDetails['student_id'] ?? 'N/A');
+    $dateStr      = date('F j, Y');
 
     $body  = "<p>Dear Parent/Guardian,</p>";
     $body .= "<p>This is to inform you that an incident involving your child, <b>{$studentName}</b> (Student ID: {$studentIdNum}), was recorded on {$dateStr}.</p>";
-    $body .= "<p>Below are the details:</p>";
-    $body .= "<ul style='list-style-type: none; padding: 0;'>";
-    $body .= "<li style='margin-bottom: 5px;'><b>Type of Violation:</b> " . htmlspecialchars($incidentDetails['type'] ?? 'N/A') . "</li>";
-    $body .= "<li style='margin-bottom: 5px;'><b>Violation:</b> " . htmlspecialchars($incidentDetails['violation'] ?? 'N/A') . "</li>";
-    $body .= "<li style='margin-bottom: 5px;'><b>Sanction:</b> " . htmlspecialchars($incidentDetails['sanction'] ?? 'N/A') . "</li>";
-    $body .= "<li style='margin-bottom: 5px;'><b>Number of Offense:</b> " . htmlspecialchars($incidentDetails['offense'] ?? 'N/A') . "</li>";
+    $body .= "<p>Details:</p><ul>";
+    $body .= "<li><b>Type:</b> " . htmlspecialchars($incidentDetails['type'] ?? 'N/A') . "</li>";
+    $body .= "<li><b>Violation:</b> " . htmlspecialchars($incidentDetails['violation'] ?? 'N/A') . "</li>";
+    $body .= "<li><b>Sanction:</b> " . htmlspecialchars($incidentDetails['sanction'] ?? 'N/A') . "</li>";
+    $body .= "<li><b>Offense:</b> " . htmlspecialchars($incidentDetails['offense'] ?? 'N/A') . "</li>";
     $body .= "</ul>";
-    $body .= "<p>We request your cooperation in addressing this matter. Please contact the school office or the guidance counselor to discuss the incident or to schedule a meeting if needed.</p>";
+    $body .= "<p>Please contact the school office or guidance counselor for further discussion.</p>";
     $body .= "<p>Sincerely,<br>Student Discipline Office</p>";
 
     $mail->Body = $body;
+    $mail->AltBody = strip_tags(str_replace(["<br>", "<li>", "</li>"], ["\n", "- ", ""], $body));
 
-    $altBody  = "Dear Parent/Guardian,\n\n";
-    $altBody .= "This is to inform you that an incident involving your child, {$studentName} (Student ID: {$studentIdNum}), was recorded on {$dateStr}.\n\n";
-    $altBody .= "Incident Details:\n";
-    $altBody .= "- Type of Violation: " . ($incidentDetails['type'] ?? 'N/A') . "\n";
-    $altBody .= "- Violation: " . ($incidentDetails['violation'] ?? 'N/A') . "\n";
-    $altBody .= "- Sanction: " . ($incidentDetails['sanction'] ?? 'N/A') . "\n";
-    $altBody .= "- Number of Offense: " . ($incidentDetails['offense'] ?? 'N/A') . "\n\n";
-    $altBody .= "We request your cooperation in addressing this matter. Please contact the school office or the guidance counselor to discuss the incident or to schedule a meeting if needed.\n\n";
-    $altBody .= "Sincerely,\nStudent Discipline Office";
-
-    $mail->AltBody = $altBody;
-
-    // Clear the output buffer before sending, to make sure debug output is visible
     ob_clean();
-
     $mail->send();
 
     echo json_encode([
         "success" => true,
-        "message" => "Notification sent successfully to " . htmlspecialchars($recipientEmail)
+        "message" => "Notification sent successfully to " . htmlspecialchars($recipientEmail),
+        "incident" => $incidentDetails
     ]);
 
 } catch (Exception $e) {
-    // Clear the output buffer to ensure our JSON error is the only output
     ob_clean();
     http_response_code(500);
-    error_log("Mailer Error: " . $mail->ErrorInfo); // Log the detailed error
+    error_log("Mailer Error: " . $mail->ErrorInfo);
     echo json_encode([
         "success" => false,
-        "message" => "Mailer Error: Could not send email. " . $mail->ErrorInfo,
+        "message" => "Mailer Error: Could not send email.",
         "debug_info" => $e->getMessage()
     ]);
 }

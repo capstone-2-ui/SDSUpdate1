@@ -14,7 +14,7 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    fetch("http://localhost/SDSUpdate1-main/backend/login.php", {
+    fetch("http://192.168.100.88/SDSUpdate1-main/backend/login.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -25,8 +25,20 @@ export default function Login({ onLogin }) {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          // pass back username + email + role so app can display it
-          onLogin({ email: data.user.email, role: data.user.role, username: data.user.username });
+          // Build the user object
+          const userData = {
+            email: data.user.email,
+            role: data.user.role,
+            username: data.user.username
+          };
+
+          // Save to React state
+          onLogin(userData);
+
+          // ✅ Save to localStorage so it survives refresh
+          localStorage.setItem("user", JSON.stringify(userData));
+
+          // Redirect based on role
           const role = (data.user.role || "").toUpperCase();
           if (role === "ADMIN" || role === "OSA" || role === "GUEST") {
             navigate("/dashboard", { replace: true });

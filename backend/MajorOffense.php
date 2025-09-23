@@ -3,17 +3,30 @@
 // - GET  => list all saved records, GET?student_id=... => single record (legacy) or add &all=1 to return all for student
 // - GET?id=... => fetch specific record
 // - POST => save a step or full data (payload: { student_id, step: <1..5>, data: { ... }, record_id?, create_new? })
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+
 header("Content-Type: application/json; charset=UTF-8");
+
+// --- Dynamic CORS ---
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowed_origins = [
+    'http://localhost:3000',
+    'http://192.168.100.88:3000',
+];
+
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization");
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-$dbHost = 'localhost';
+// --- Database connection ---
+$dbHost = 'localhost';  // keep localhost since MySQL is on the same machine
 $dbName = 'MajorOffense_db';
 $dbUser = 'root';
 $dbPass = '';
@@ -56,7 +69,7 @@ if ($method === 'GET') {
         }
     }
 
-    // GET by student_id: if all=1 return all records, otherwise return latest (legacy behavior)
+    // GET by student_id
     if (isset($_GET['student_id']) && strlen($_GET['student_id']) > 0) {
         $student_id = (string)$_GET['student_id'];
         if (isset($_GET['all']) && ($_GET['all'] === '1' || $_GET['all'] === 'true')) {
@@ -77,7 +90,6 @@ if ($method === 'GET') {
             echo json_encode(['success' => true, 'records' => $out]);
             exit;
         } else {
-            // legacy: return a single (latest) record
             $stmt = $pdo->prepare("SELECT * FROM major_offenses WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1");
             $stmt->execute([$student_id]);
             $row = $stmt->fetch();
@@ -122,7 +134,7 @@ if ($method === 'GET') {
 if ($method === 'POST') {
     $payload = json_decode(file_get_contents('php://input'), true);
 
-    // If payload includes 'record_id' (or 'id'), update that specific record.
+    // Update existing record by ID
     if ($payload && (isset($payload['record_id']) || isset($payload['id'])) && isset($payload['data'])) {
         $rid = isset($payload['record_id']) ? $payload['record_id'] : $payload['id'];
         $fullData = $payload['data'];
@@ -136,7 +148,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    // Full-data save w/o step (but allow create_new)
+    // Save full data
     if ($payload && isset($payload['student_id']) && isset($payload['data']) && !isset($payload['step'])) {
         $student_id = (string)$payload['student_id'];
         $fullData = $payload['data'];
@@ -146,7 +158,6 @@ if ($method === 'POST') {
         }
 
         if (!empty($payload['create_new'])) {
-            // always insert a new record
             $ins = $pdo->prepare("INSERT INTO major_offenses (student_id, data, completed_steps) VALUES (?, ?, ?)");
             $ins->execute([$student_id, json_encode($fullData), $completed]);
             $newId = $pdo->lastInsertId();
@@ -154,7 +165,6 @@ if ($method === 'POST') {
             exit;
         }
 
-        // legacy upsert by latest record: update latest or insert new
         $stmt = $pdo->prepare("SELECT id FROM major_offenses WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1");
         $stmt->execute([$student_id]);
         $row = $stmt->fetch();
@@ -172,7 +182,7 @@ if ($method === 'POST') {
         }
     }
 
-    // Step-level save: payload contains student_id and step
+    // Step-level save
     if (!$payload || !isset($payload['student_id']) || !isset($payload['step'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Missing student_id or step']);
@@ -186,7 +196,6 @@ if ($method === 'POST') {
     $forceNew = !empty($payload['create_new']);
 
     if ($recordId) {
-        // Update specific record by id
         $stmt = $pdo->prepare("SELECT * FROM major_offenses WHERE id = ? LIMIT 1");
         $stmt->execute([$recordId]);
         $row = $stmt->fetch();
@@ -209,7 +218,6 @@ if ($method === 'POST') {
     }
 
     if ($forceNew) {
-        // Insert new record with this step as initial data
         $new = [];
         $new['step' . $step] = $stepData;
         $completed = 0;
@@ -223,7 +231,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    // Default legacy behavior: update latest record for student, or insert if none
+    // Update latest or insert new
     $stmt = $pdo->prepare("SELECT * FROM major_offenses WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1");
     $stmt->execute([$student_id]);
     $row = $stmt->fetch();
