@@ -10,7 +10,8 @@ import {
   Line,
   XAxis,
   YAxis,
-  CartesianGrid
+  CartesianGrid,
+  Legend
 } from "recharts";
 
 function DashboardPage({ user }) {
@@ -20,6 +21,7 @@ function DashboardPage({ user }) {
   const [loading, setLoading] = useState(true);
 
   const COLORS = ["#d2a56a", "#a4702d", "#5b3d1e", "#bfa176", "#8f6a3f"];
+  const LINE_COLORS = { total: "#555", minor: "#555", major: "#555" };
 
   const DASHBOARD_API = "http://192.168.100.88/SDSUpdate1-main/backend/Dashboard.php";
   const INCIDENTS_API = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
@@ -173,13 +175,55 @@ function DashboardPage({ user }) {
     return map;
   };
 
+  // Compute monthly totals (total, minor, major) from raw incidents list.
+  const computeMonthlyFromIncidents = (incidents = []) => {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const monthly = months.map((m) => ({ month: m, total: 0, minor: 0, major: 0 }));
+
+    for (const rec of incidents) {
+      // Accept created_at and try to parse it
+      let created = rec.created_at ?? rec.createdAt ?? rec.date ?? null;
+      let monthIndex = null;
+      if (created) {
+        // Try common formats: YYYY-MM-DD..., timestamp, or JS-friendly format
+        const d = new Date(created);
+        if (!isNaN(d.getTime())) {
+          monthIndex = d.getMonth(); // 0..11
+        } else {
+          // try to extract month number from YYYY-MM-DD
+          const mMatch = String(created).match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+          if (mMatch) {
+            monthIndex = Number(mMatch[2]) - 1;
+          }
+        }
+      }
+      // If we couldn't determine month, skip this record
+      if (monthIndex === null || monthIndex < 0 || monthIndex > 11) continue;
+
+      const major = isMajorIncident(rec);
+      const minor = !major && isMinorIncident(rec);
+
+      if (major) monthly[monthIndex].major += 1;
+      else if (minor) monthly[monthIndex].minor += 1;
+      else {
+        // fallback counting as minor
+        monthly[monthIndex].minor += 1;
+      }
+      monthly[monthIndex].total += 1;
+    }
+
+    return monthly;
+  };
+
   useEffect(() => {
     const fetchDashboard = async () => {
       setLoading(true);
       try {
         const res = await fetch(DASHBOARD_API);
         const data = await res.json();
-        setSanctionData(Array.isArray(data.sanctions) ? data.sanctions : []);
+        // Dashboard.php returns "sanctions" etc — earlier code used 'sanctions' vs 'sanctionData' variable name
+        // Keep backward compatibility: accept data.sanctions OR data.sanctionData
+        setSanctionData(Array.isArray(data.sanctions) ? data.sanctions : (Array.isArray(data.sanctionData) ? data.sanctionData : []));
 
         const rawViolations = Array.isArray(data.violationsByDept) ? data.violationsByDept : [];
 
@@ -208,19 +252,21 @@ function DashboardPage({ user }) {
         // If normalized rows have no explicit minor/major info, try to fetch incidents and compute
         const needAggregation = normalized.length > 0 && normalized.every((r) => r.minor == null && r.major == null);
         let incidentsMap = null;
+        let incidentsList = null;
 
         if (needAggregation) {
           try {
             const incRes = await fetch(INCIDENTS_API);
             const incData = await incRes.json();
             const incidents = Array.isArray(incData) ? incData : (Array.isArray(incData.data) ? incData.data : []);
+            incidentsList = incidents;
             if (incidents.length > 0) {
               incidentsMap = aggregateFromIncidents(incidents);
             }
           } catch (e) {
-            // Fail silently and keep normalized (fallback)
             console.warn("Failed to fetch incidents for aggregation:", e);
             incidentsMap = null;
+            incidentsList = null;
           }
         }
 
@@ -282,7 +328,54 @@ function DashboardPage({ user }) {
         }));
 
         setViolationByDept(finalRows);
-        setMonthlyViolations(Array.isArray(data.monthlyViolations) ? data.monthlyViolations : []);
+
+        // monthlyViolations returned by backend
+        const dashboardMonthly = Array.isArray(data.monthlyViolations) ? data.monthlyViolations : [];
+
+        // Normalize dashboard monthly array to objects {month, total, minor, major}
+        const normalizedMonthly = (dashboardMonthly.length > 0)
+          ? dashboardMonthly.map((m) => ({
+              month: m.month ?? m.label ?? m.name ?? "",
+              total: extractNumber(m, ["total","count","violations","value"]) ?? 0,
+              minor: (m.minor !== undefined ? extractNumber(m, ["minor","minor_count","minors"]) : undefined),
+              major: (m.major !== undefined ? extractNumber(m, ["major","major_count","majors"]) : undefined)
+            }))
+          : [];
+
+        // Decide if dashboard already contains minor/major per month
+        const hasMinorMajor = normalizedMonthly.length > 0 && normalizedMonthly.every((m) => m.minor !== undefined && m.major !== undefined);
+
+        if (hasMinorMajor) {
+          // ensure numbers
+          const mm = normalizedMonthly.map((m) => ({ month: m.month, total: Number(m.total || 0), minor: Number(m.minor || 0), major: Number(m.major || 0) }));
+          setMonthlyViolations(mm);
+        } else {
+          // --- KEY CHANGE ---
+          // If the dashboard did not provide minor/major per month, fetch incidents directly
+          // (the same source used for the "Total of Students Violations" table) and compute monthly minor/major.
+          let incidents = incidentsList;
+          try {
+            // Fetch incidents even if incidentsList is null, to ensure we compute minor/major correctly from DB
+            const incRes = await fetch(INCIDENTS_API);
+            const incData = await incRes.json();
+            incidents = Array.isArray(incData) ? incData : (Array.isArray(incData.data) ? incData.data : []);
+          } catch (e) {
+            // if the fetch fails, incidents will remain what it was (likely null)
+            console.warn("Failed to fetch incidents for monthly minor/major computation:", e);
+          }
+
+          if (incidents && incidents.length > 0) {
+            const computed = computeMonthlyFromIncidents(incidents);
+            setMonthlyViolations(computed);
+          } else if (normalizedMonthly.length > 0) {
+            // fall back to dashboard totals only (fill null -> 0 for minor/major)
+            const mm = normalizedMonthly.map((m) => ({ month: m.month, total: Number(m.total || 0), minor: Number(m.minor || 0) || 0, major: Number(m.major || 0) || 0 }));
+            setMonthlyViolations(mm);
+          } else {
+            // no data at all
+            setMonthlyViolations([]);
+          }
+        }
       } catch (err) {
         console.error("Failed to load dashboard data", err);
         setSanctionData([]);
@@ -296,6 +389,31 @@ function DashboardPage({ user }) {
     fetchDashboard();
     // Optional: poll every X minutes by setInterval (not added by default)
   }, []);
+
+  // compute aggregated totals shown below the chart
+  const totals = monthlyViolations.reduce((acc, m) => {
+    acc.total += Number(m.total || 0);
+    acc.minor += Number(m.minor || 0);
+    acc.major += Number(m.major || 0);
+    return acc;
+  }, { total: 0, minor: 0, major: 0 });
+
+  // Custom tooltip for the LineChart: shows total / minor / major on hover
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || payload.length === 0) return null;
+    // payload[0].payload should contain the original data object for the hovered point
+    const dataPoint = (payload[0] && payload[0].payload) || {};
+    const fmt = (v) => Number(v || 0);
+
+    return (
+      <div style={{ background: "#fff", border: "1px solid #ddd", padding: 8, borderRadius: 6, minWidth: 140 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+        <div style={{ marginBottom: 4 }}>Total: <strong>{fmt(dataPoint.total)}</strong></div>
+        <div style={{ color: LINE_COLORS.minor, marginBottom: 4 }}>Minor: <strong>{fmt(dataPoint.minor)}</strong></div>
+        <div style={{ color: LINE_COLORS.major }}>Major: <strong>{fmt(dataPoint.major)}</strong></div>
+      </div>
+    );
+  };
 
   return (
     <div className="dashboard-container">
@@ -380,7 +498,7 @@ function DashboardPage({ user }) {
                   {violationByDept.map((row, index) => {
                     // Prefer explicit minor/major if present; fallback to total->minor if necessary
                     const minorCount = (row.minor != null) ? Number(row.minor) : (row.total != null ? Number(row.total) : 0);
-                    const majorCount = (row.major != null) ? Number(row.major) :
+                    const majorCount = (row.major != null) ? Number(row.major) : 
                       // If total present and minor present, infer major as total-minor
                       (row.total != null && row.minor != null ? Math.max(0, Number(row.total) - Number(row.minor)) : 0);
 
@@ -406,19 +524,25 @@ function DashboardPage({ user }) {
         <div className="card">
           <h3>Student Violation Data</h3>
           <p style={{ fontSize: 14, color: "#555" }}>Total Violation Trends</p>
-          <ResponsiveContainer width="100%" height={250}>
+
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={monthlyViolations}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis allowDecimals={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]} />
-              <Tooltip />
-              <Line type="monotone" dataKey="total" stroke="#8884d8" />
+              <YAxis allowDecimals={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]}  />
+              {/* Replace the simple Tooltip with our custom tooltip */}
+              <Tooltip content={<CustomTooltip />} />
+              <Legend verticalAlign="top" height={36} />
+              <Line type="monotone" dataKey="total" stroke={LINE_COLORS.total} strokeWidth={2} dot={{ r: 3 }} name="Total" />
+              <Line type="monotone" dataKey="minor" stroke={LINE_COLORS.minor} strokeDasharray="5 3" strokeWidth={2} dot={{ r: 3 }} name="Minor" />
+              <Line type="monotone" dataKey="major" stroke={LINE_COLORS.major} strokeDasharray="3 3" strokeWidth={2} dot={{ r: 3 }} name="Major" />
             </LineChart>
           </ResponsiveContainer>
+
         </div>
       </div>
     </div>
   );
 }
 
-export default DashboardPage;
+export default DashboardPage; 
