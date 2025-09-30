@@ -2112,9 +2112,10 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
 
   const [steps, setSteps] = useState({
     step1: savedData?.step1 ?? { incidentReport: "" },
-    step2: savedData?.step2 ?? { chairDean: "", facultyMember: "", sscRep: "", dscRep: "", guidance: "" },
+    step2: savedData?.step2 ?? { chairDean: "", facultyMember: "", sscRep: "", dscRep: "", guidance: "", notes: "" },
     step3: savedData?.step3 ?? { complainant: false, respondentPresent: false, parentsPresent: false, witnessTestimonies: false, finalStatements: "" },
-    step4: savedData?.step4 ?? { sanction: "" },
+    // Add `notes` so Step 4 can store freeform rationale/details alongside the selected sanction
+    step4: savedData?.step4 ?? { sanction: "", notes: "" },
     step5: savedData?.step5 ?? { decisionApproval: "" },
   });
 
@@ -2315,6 +2316,17 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                 <input type="text" value={steps.step2.guidance ?? ""} onChange={(e) => setStepField("step2", { ...steps.step2, guidance: e.target.value })} />
               </div>
             </div>
+
+            {/* New textarea for step 2 notes / additional details */}
+            <div style={{ marginTop: 8 }}>
+              <label>Narrative / Additional Details</label>
+              <textarea
+                value={steps.step2.notes ?? ""}
+                onChange={(e) => setStepField("step2", { ...steps.step2, notes: e.target.value })}
+                rows={4}
+                placeholder="Optional: add any additional notes or context about the committee appointment or selection..."
+              />
+            </div>
           </div>
         );
       case 3:
@@ -2328,7 +2340,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
               <label><input type="checkbox" checked={!!steps.step3.witnessTestimonies} onChange={(e) => setStepField("step3", { ...steps.step3, witnessTestimonies: e.target.checked })} /> Witness testimonies collected</label>
             </div>
             <div style={{ marginTop: 8 }}>
-              <label>Final statements / notes</label>
+              <label>Final statements / Narrative</label>
               <textarea value={steps.step3.finalStatements ?? ""} onChange={(e) => setStepField("step3", { ...steps.step3, finalStatements: e.target.value })} rows={4} />
             </div>
           </div>
@@ -2345,7 +2357,6 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                 value={steps.step4.sanction ?? ""}
                 onChange={(e) => setStepField("step4", { ...steps.step4, sanction: e.target.value })}
                 onFocus={() => {
-                  // ensure list is fetched when user clicks the dropdown
                   if (sanctionOptions.length === 0 && !sanctionLoading) fetchSanctions();
                 }}
               >
@@ -2370,6 +2381,18 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                   </>
                 )}
               </select>
+            </div>
+
+            {/* Sanction rationale / narrative textarea */}
+            <div style={{ marginTop: 10 }}>
+              <label>Sanction Rationale / Narrative (optional)</label>
+              <textarea
+                placeholder="Optional: add rationale, narrative or details about the chosen sanction..."
+                rows={4}
+                value={steps.step4.notes ?? ""}
+                onChange={(e) => setStepField("step4", { ...steps.step4, notes: e.target.value })}
+                style={{ width: "100%", marginTop: 6 }}
+              />
             </div>
           </div>
         );
@@ -2456,80 +2479,90 @@ function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, 
       </div>
 
       <div style={section}>
-        <div style={heading}>Step 1 — Incident Report</div>
-        <div style={labelStyle}>Report</div>
+        <div style={heading}>Incident Report</div>
+        <div style={labelStyle}><strong>Incident Report or Complaint:</strong></div>
         <div style={valueStyle}>{s1.incidentReport ?? "—"}</div>
       </div>
 
       <div style={section}>
-        <div style={heading}>Step 2 — Committee / Appointments</div>
-        <div style={labelStyle}>Appointed Chair or College Dean</div>
+        <div style={heading}>Commitee Discipline Formed</div>
+        <div style={labelStyle}><strong>Appointed Chair or College Dean:</strong></div>
         <div style={valueStyle}>{s2.chairDean ?? "—"}</div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Faculty Member</div>
+          <div style={labelStyle}><strong>Faculty Member:</strong></div>
           <div style={valueStyle}>{s2.facultyMember ?? "—"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>SSC Rep</div>
+          <div style={labelStyle}><strong>SSC Representative:</strong></div>
           <div style={valueStyle}>{s2.sscRep ?? "—"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>DSC Rep</div>
+          <div style={labelStyle}><strong>DSC Representative:</strong></div>
           <div style={valueStyle}>{s2.dscRep ?? "—"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Guidance</div>
+          <div style={labelStyle}><strong>Guidance Counsilor:</strong></div>
           <div style={valueStyle}>{s2.guidance ?? "—"}</div>
+        </div>
+
+        { /* Show notes if present */ }
+        <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}><strong>Narrative / Additional Details:  </strong></div>
+          <div style={valueStyle}>{s2.notes ?? "—"}</div>
         </div>
       </div>
 
       <div style={section}>
-        <div style={heading}>Step 3 — Attendance / Testimonies</div>
-        <div style={labelStyle}>Complainant Present</div>
+        <div style={heading}>Attendance / Hearing Details</div>
+        <div style={labelStyle}><strong>Complainant Present:</strong></div>
         <div style={valueStyle}>{s3.complainant ? "Yes" : "No"}</div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Respondent Present</div>
+          <div style={labelStyle}><strong>Respondent Present:</strong></div>
           <div style={valueStyle}>{s3.respondentPresent ? "Yes" : "No"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Parents Present</div>
+          <div style={labelStyle}><strong>Parents Present:</strong></div>
           <div style={valueStyle}>{s3.parentsPresent ? "Yes" : "No"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Witness Testimonies Collected</div>
+          <div style={labelStyle}><strong>Witness Testimonies Collected:</strong></div>
           <div style={valueStyle}>{s3.witnessTestimonies ? "Yes" : "No"}</div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Final Statements / Notes</div>
+          <div style={labelStyle}><strong>Final Statements / Narrative:</strong></div>
           <div style={valueStyle}>{s3.finalStatements ?? "—"}</div>
         </div>
       </div>
 
       <div style={section}>
-        <div style={heading}>Step 4 — Sanction</div>
-        <div style={labelStyle}>Selected Sanction</div>
+        <div style={heading}>Sanction Imposing</div>
+        <div style={labelStyle}><strong>Selected Sanction:</strong></div>
         <div style={valueStyle}>{s4.sanction ?? "—"}</div>
       </div>
 
+      <div style={{ marginTop: 8 }}>
+          <div style={labelStyle}><strong>Sanction Rationale / Narrative:  </strong></div>
+          <div style={valueStyle}>{s4.notes ?? "—"}</div>
+        </div>
+
       <div style={section}>
-        <div style={heading}>Step 5 — Decision Approval</div>
-        <div style={labelStyle}>Approved</div>
+        <div style={heading}>Decision Approval</div>
+        <div style={labelStyle}><strong>Approved:</strong></div>
         <div style={valueStyle}>{s5.decisionApproval ?? "—"}</div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={labelStyle}>Notes</div>
+          <div style={labelStyle}><strong>Narrative:</strong></div>
           <div style={valueStyle}>{s5.notes ?? "—"}</div>
         </div>
       </div>
     </div>
   );
 }
-
