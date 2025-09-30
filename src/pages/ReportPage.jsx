@@ -40,6 +40,66 @@ const ReportPage = ({ user }) => {
   const filterContainerRef = useRef(null);
   const filterBtnRef = useRef(null);
 
+  // Improved discipline detection using many common keys and robust matching.
+  const detectDiscipline = (r = {}) => {
+    if (!r || typeof r !== "object") return "";
+
+    // Prefer explicit fields first
+    const explicitKeys = [
+      "type",
+      "violation_type",
+      "violationType",
+      "violation_class",
+      "category",
+      "discipline",
+      "disciplinary",
+      "classification",
+      "offense", // string like "Major" or "1st"
+      "number_of_offense",
+      "offence",
+      "offence_number",
+      "level",
+      "description",
+      "violation",
+      "sanction",
+    ];
+
+    // Helper to normalize text
+    const text = (v) => (v === null || v === undefined ? "" : String(v).trim().toLowerCase());
+
+    // First pass: check explicit fields for the words "major" or "minor"
+    for (const key of explicitKeys) {
+      const val = r[key];
+      if (val === undefined) continue;
+      const s = text(val);
+      if (!s) continue;
+      if (/\bmajor\b/.test(s)) return "Major";
+      if (/\bminor\b/.test(s)) return "Minor";
+      // common formatted values: "1st", "2nd" -> treat as Minor
+      if (/\b1st\b|\b2nd\b|\b3rd\b|\bfirst\b|\bsecond\b|\bthird\b/.test(s)) return "Minor";
+      // sometimes offense stored as 'Major Offense' or 'Minor Offense'
+      if (s.includes("major offense") || s.includes("major_offense")) return "Major";
+      if (s.includes("minor offense") || s.includes("minor_offense")) return "Minor";
+    }
+
+    // Second pass: some APIs return nested student object or mixed shapes
+    // Try to inspect common nested shapes (student.type, student.offense, etc.)
+    if (r.student && typeof r.student === "object") {
+      const s = text(r.student.type || r.student.offense || r.student.violation_type || r.student.violation);
+      if (s) {
+        if (/\bmajor\b/.test(s)) return "Major";
+        if (/\bminor\b/.test(s)) return "Minor";
+      }
+    }
+
+    // Third pass: look for numeric offense fields that explicitly equal a string "Major"
+    // (some backends set offense = 'Major')
+    if (String(r.offense || "").toLowerCase() === "major") return "Major";
+
+    // Default: unknown
+    return "";
+  };
+
   // Fetch incidents
   useEffect(() => {
     let mounted = true;
@@ -47,47 +107,59 @@ const ReportPage = ({ user }) => {
       try {
         const res = await fetch(INCIDENT_URL);
         const data = await res.json();
-        const normalized = Array.isArray(data)
-          ? data.map((r) => ({
-              id: r.id,
-              student_id:
-                r.student_id ??
-                r.studentId ??
-                r.student?.student_id ??
-                r.student?.id ??
-                r.id,
-              name:
-                r.name ??
-                r.student_name ??
-                r.student?.name ??
-                r.student?.fullName ??
-                "",
-              department:
-                r.department ??
-                r.dept ??
-                r.student?.department ??
-                r.student?.dept ??
-                "",
-              grade:
-                r.grade ??
-                r.year ??
-                r.level ??
-                r.student?.grade ??
-                r.student?.year ??
-                "",
-              year:
-                r.year ?? r.grade ?? r.student?.year ?? r.student?.grade ?? "",
-              section:
-                r.section ??
-                r.sec ??
-                r.section_name ??
-                r.student?.section ??
-                "",
-              violation: r.violation ?? r.description ?? "",
-              sanction: r.sanction ?? "",
-              status: r.status ?? "",
-            }))
+
+        // Accept common shapes: direct array, or { data: [...] }, or { rows: [...] }
+        const rawRows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.rows)
+          ? data.rows
           : [];
+
+        const normalized = rawRows.map((r) => {
+          const disciplinary = detectDiscipline(r);
+          return {
+            // keep id as-is where possible
+            id: r.id ?? r.incident_id ?? r._id ?? null,
+            student_id:
+              r.student_id ??
+              r.studentId ??
+              (r.student && (r.student.student_id ?? r.student.id)) ??
+              r.id ??
+              "",
+            name:
+              r.name ??
+              r.student_name ??
+              (r.student && (r.student.name ?? r.student.fullName)) ??
+              "",
+            department:
+              r.department ??
+              r.dept ??
+              (r.student && (r.student.department ?? r.student.dept)) ??
+              "",
+            grade:
+              r.grade ??
+              r.year ??
+              r.level ??
+              (r.student && (r.student.grade ?? r.student.year)) ??
+              "",
+            year: r.year ?? r.grade ?? (r.student && (r.student.year ?? r.student.grade)) ?? "",
+            section:
+              r.section ??
+              r.sec ??
+              r.section_name ??
+              (r.student && r.student.section) ??
+              "",
+            violation: r.violation ?? r.description ?? "",
+            sanction: r.sanction ?? "",
+            status: r.status ?? "",
+            // preserve raw fields for troubleshooting
+            _raw: r,
+            disciplinary, // "Minor" | "Major" | ""
+          };
+        });
+
         if (mounted) setReports(normalized);
       } catch (err) {
         console.error("Error fetching incidents:", err);
@@ -249,6 +321,13 @@ const ReportPage = ({ user }) => {
     [reports]
   );
 
+  // New: derive disciplinary options from actual detected values in reports
+  const derivedDisciplinary = useMemo(
+    () =>
+      Array.from(new Set(reports.map((r) => (r.disciplinary || "").trim()).filter(Boolean))).sort(),
+    [reports]
+  );
+
   const departments = departmentOptions.length ? departmentOptions : derivedDepartments;
   const years = derivedYears;
   const grades = gradeOptions.length ? gradeOptions : derivedGrades;
@@ -279,6 +358,12 @@ const ReportPage = ({ user }) => {
     .filter((r) => (filters.year ? String(r.year) === String(filters.year) : true))
     .filter((r) => (filters.violation ? (r.violation || "") === filters.violation : true))
     .filter((r) => (filters.sanction ? (r.sanction || "") === filters.sanction : true))
+    // case-insensitive disciplinary comparison
+    .filter((r) =>
+      filters.disciplinary
+        ? String((r.disciplinary || "")).toLowerCase() === String(filters.disciplinary).toLowerCase()
+        : true
+    )
     .filter((r) => (filters.grade ? (r.grade || "").toString() === filters.grade.toString() : true))
     .filter((r) => (filters.section ? (r.section || "") === filters.section : true))
     .filter((r) => (filters.status.length > 0 ? filters.status.includes(r.status) : true))
@@ -303,7 +388,8 @@ const ReportPage = ({ user }) => {
         (r.section || "").toLowerCase().includes(q) ||
         (r.violation || "").toLowerCase().includes(q) ||
         (r.sanction || "").toLowerCase().includes(q) ||
-        (r.status || "").toLowerCase().includes(q)
+        (r.status || "").toLowerCase().includes(q) ||
+        (r.disciplinary || "").toLowerCase().includes(q)
       );
     });
   }, [reports, filteredReports, hasAppliedFilters, searchQuery]);
@@ -320,8 +406,12 @@ const ReportPage = ({ user }) => {
       r.grade || "",
       r.section || "",
       r.violation || "",
+      r.disciplinary || "",
     ]);
-    const csvContent = [["Student ID", "Name", "Department", "Grade", "Section", "Violation"], ...rows]
+    const csvContent = [
+      ["Student ID", "Name", "Department", "Grade", "Section", "Violation", "Disciplinary"],
+      ...rows,
+    ]
       .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
       .join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -535,6 +625,26 @@ const ReportPage = ({ user }) => {
                 </select>
               </div>
 
+              {/* Disciplinary Type (Minor / Major) - uses derived values when available */}
+              <div className="filter-section">
+                <label className="filter-section-title">Disciplinary Type</label>
+                <select
+                  value={filters.disciplinary}
+                  onChange={(e) => handleFilterChange("disciplinary", e.target.value)}
+                >
+                  <option value="">All Types</option>
+                  {/* If backend produced detected values, show them */}
+                  {derivedDisciplinary.length > 0
+                    ? derivedDisciplinary.map((d) => <option key={d} value={d}>{d}</option>)
+                    : (
+                      <>
+                        <option value="Minor">Minor</option>
+                        <option value="Major">Major</option>
+                      </>
+                    )}
+                </select>
+              </div>
+
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
                 <button className="btn" onClick={() => { clearFilters(); setFilterOpen(false); }}>Clear</button>
                 <button className="btn primary" onClick={() => setFilterOpen(false)}>Apply</button>
@@ -566,23 +676,25 @@ const ReportPage = ({ user }) => {
                     <th>Grade</th>
                     <th>Section</th>
                     <th>Violation</th>
+                    <th>Type</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayedReports.length > 0 ? (
                     displayedReports.map((report) => (
-                      <tr key={report.id} onClick={() => setViewModal({ open: true, item: report })} style={{ cursor: "pointer" }}>
+                      <tr key={report.id ?? `${report.student_id}-${report.name}`} onClick={() => setViewModal({ open: true, item: report })} style={{ cursor: "pointer" }}>
                         <td>{report.student_id || report.id}</td>
                         <td>{report.name || "-"}</td>
                         <td>{report.department || "-"}</td>
                         <td>{report.grade || "-"}</td>
                         <td>{report.section || "-"}</td>
                         <td>{report.violation || "-"}</td>
+                        <td>{report.disciplinary || "-"}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="6" className="text-center">No reports found for the applied filters / search</td>
+                      <td colSpan="7" className="text-center">No reports found for the applied filters / search</td>
                     </tr>
                   )}
                 </tbody>
@@ -606,6 +718,7 @@ const ReportPage = ({ user }) => {
               <div><strong>Year:</strong> {viewModal.item.year || "-"}</div>
               <div><strong>Violation:</strong> {viewModal.item.violation || "-"}</div>
               <div><strong>Sanction:</strong> {viewModal.item.sanction || "-"}</div>
+              <div><strong>Disciplinary Type:</strong> {viewModal.item.disciplinary || "-"}</div>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn" onClick={() => setViewModal({ open: false, item: null })}>Close</button>

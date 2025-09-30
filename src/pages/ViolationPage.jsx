@@ -595,9 +595,9 @@ export default function ViolationPage({ user }) {
                 value={formData.violation}
                 onChange={handleInputChange}
               />
-              <label>Category</label>
+              <label>Type</label>
               <select name="type" value={formData.type} onChange={handleInputChange}>
-                <option value="">Select Category</option>
+                <option value="">Select Type</option>
                 <option value="Minor">Minor</option>
                 <option value="Major">Major</option>
               </select>

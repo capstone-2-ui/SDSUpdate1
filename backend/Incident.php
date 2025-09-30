@@ -52,7 +52,7 @@ if ($method === "POST") {
         $studentId = $data['student_id'] ?? null;
         $incidentDetails = $data['incident'] ?? [];
 
-        if (!$studentId) {
+        if (!$studentId) { 
             http_response_code(400);
             echo json_encode(["success" => false, "message" => "Student ID is required."]);
             exit;
@@ -98,7 +98,7 @@ if ($method === "POST") {
         $to = $studentRow['email'];
         $subject = "Notification of Incident Report";
 
-        $message = "Dear Student,\n\nThis is to inform you that an incident report has been filed concerning you.\n\n";
+        $message = "Dear Student/Parents,\n\nThis is to inform you that an incident report has been filed concerning you.\n\n";
         if (!empty($incidentDetails)) {
             $message .= "Incident Details:\n";
             $message .= "Type: " . ($incidentDetails['type'] ?? 'N/A') . "\n";
@@ -106,7 +106,7 @@ if ($method === "POST") {
             $message .= "Violation: " . ($incidentDetails['violation'] ?? 'N/A') . "\n";
             $message .= "Sanction: " . ($incidentDetails['sanction'] ?? 'N/A') . "\n";
         }
-        $message .= "\nPlease visit the student affairs office for more details.\n\nSincerely,\nStudent Discipline Office";
+        $message .= "\nPlease visit the Student Affairs Office for more details.\n\nSincerely,\nOffice of Student Affairs";
 
         // ------------ PHPMailer Loader + Send ------------
         $phpmailerDir = __DIR__ . DIRECTORY_SEPARATOR . 'PHPMailer' . DIRECTORY_SEPARATOR;

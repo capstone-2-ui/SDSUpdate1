@@ -217,7 +217,7 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
             exit;
         }
         $delBySid->close();
-    }
+    } 
 
     if (ctype_digit($id)) {
         $intId = intval($id);

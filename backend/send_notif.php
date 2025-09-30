@@ -165,11 +165,11 @@ try {
     $body .= "<li><b>Offense:</b> " . htmlspecialchars($incidentDetails['offense'] ?? 'N/A') . "</li>";
     $body .= "</ul>";
     $body .= "<p>Please contact the school office or guidance counselor for further discussion.</p>";
-    $body .= "<p>Sincerely,<br>Student Discipline Office</p>";
+    $body .= "<p>Sincerely,Student Discipline Office</p>";
 
     $mail->Body = $body;
     $mail->AltBody = strip_tags(str_replace(["<br>", "<li>", "</li>"], ["\n", "- ", ""], $body));
-
+    var_dump($body);
     ob_clean();
     $mail->send();
 

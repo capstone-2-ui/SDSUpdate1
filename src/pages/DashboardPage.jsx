@@ -21,16 +21,267 @@ function DashboardPage({ user }) {
 
   const COLORS = ["#d2a56a", "#a4702d", "#5b3d1e", "#bfa176", "#8f6a3f"];
 
+  const DASHBOARD_API = "http://192.168.100.88/SDSUpdate1-main/backend/Dashboard.php";
+  const INCIDENTS_API = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
+
+  // Helper: robustly extract numeric value from an object using candidate keys
+  const extractNumber = (obj = {}, candidates = []) => {
+    for (let k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) {
+        const v = obj[k];
+        if (v === null || v === undefined || v === "") return 0;
+        const n = Number(v);
+        if (!Number.isNaN(n)) return n;
+        // Try to parse integers from strings with commas/spaces
+        const parsed = parseInt(String(v).replace(/[^0-9\-]/g, ""), 10);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+    }
+    return null;
+  };
+
+  // Build a canonical key for grouping by department+grade
+  const groupKey = (dept, grade) => `${String(dept ?? "—").trim()}||${String(grade ?? "").trim()}`;
+
+  // Try to read common department/grade fields from a record
+  const readDeptGrade = (r = {}) => {
+    const dept =
+      r.department ??
+      r.dept ??
+      r.department_grade ??
+      r.departmentAndGrade ??
+      r.departmentName ??
+      r.department_name ??
+      r.department_and_grade ??
+      null;
+    const grade =
+      r.grade ??
+      r.level ??
+      r.grade_level ??
+      r.year ??
+      r.level_name ??
+      null;
+    return { dept, grade };
+  };
+
+  // Normalize department/grade text: trim, remove stray slashes, and detect when department actually holds the grade
+  const normalizeDeptGrade = (rawDept, rawGrade) => {
+    const clean = (v) => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if (s === "") return null;
+      // remove stray leading/trailing slashes and repeated whitespace
+      const s2 = s.replace(/^[\/\s]+|[\/\s]+$/g, "").replace(/\s+/g, " ");
+      return s2 === "" ? null : s2;
+    };
+
+    let dept = clean(rawDept);
+    let grade = clean(rawGrade);
+
+    // If dept looks like a grade (e.g., "Grade 11", "grade11", "G11", "11") and grade is empty, move it to grade.
+    const looksLikeGrade = (s) => {
+      if (!s) return false;
+      const lower = s.toLowerCase();
+      if (lower.includes("grade") || /^g\s*\d+/i.test(s) || /^grade\s*\d+/i.test(s)) return true;
+      // plain numbers (e.g., "11", "12") might also represent grade
+      if (/^\d{1,2}$/.test(s)) return true;
+      return false;
+    };
+
+    if ((!grade || grade === null) && looksLikeGrade(dept)) {
+      grade = dept;
+      dept = null;
+    }
+
+    // If dept equals grade, clear dept to avoid duplicate listing like "Grade 11 / Grade 11"
+    if (dept && grade && dept.toLowerCase() === grade.toLowerCase()) {
+      dept = null;
+    }
+
+    return { dept, grade };
+  };
+
+  // Decide whether an incident record should be considered Major or Minor.
+  // We try multiple fields: 'type', 'offense', 'violation_type', 'category', and 'violation' text.
+  const isMajorIncident = (rec = {}) => {
+    const candidates = [
+      rec.type,
+      rec.offense,
+      rec.violation_type,
+      rec.violationType,
+      rec.category,
+      rec.violation,
+      rec.violation_desc,
+      rec.number_of_offense,
+      rec.offence
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string") {
+        const s = c.trim().toLowerCase();
+        if (s.includes("major")) return true;
+      }
+      // numeric 'Major' may appear as descriptor in other shapes; skip
+    }
+    return false;
+  };
+
+  // Decide whether an incident is Minor (fallback when not major)
+  const isMinorIncident = (rec = {}) => {
+    const candidates = [
+      rec.type,
+      rec.offense,
+      rec.violation_type,
+      rec.violationType,
+      rec.category,
+      rec.violation,
+      rec.violation_desc,
+      rec.number_of_offense,
+      rec.offence
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string") {
+        const s = c.trim().toLowerCase();
+        if (s.includes("minor")) return true;
+        // also treat typical offense numbers as minor (1st, 2nd, 3rd but not 'major')
+        if (s === "1st" || s === "2nd" || s === "3rd" || s === "first" || s === "second") return true;
+      }
+    }
+    // If not explicit and not major, we'll treat as minor by default when counting totals.
+    return false;
+  };
+
+  // Aggregate incidents into a map keyed by department||grade with minor/major counts
+  const aggregateFromIncidents = (incidents = []) => {
+    const map = new Map();
+    for (const rec of incidents) {
+      const raw = readDeptGrade(rec);
+      const { dept, grade } = normalizeDeptGrade(raw.dept, raw.grade);
+      const key = groupKey(dept ?? null, grade ?? null);
+      if (!map.has(key)) map.set(key, { dept: dept ?? null, grade: grade ?? null, minor: 0, major: 0, total: 0 });
+
+      const entry = map.get(key);
+      const major = isMajorIncident(rec);
+      const minor = !major && isMinorIncident(rec);
+      if (major) entry.major += 1;
+      else if (minor) entry.minor += 1;
+      else {
+        // unknown: if not classified, count as minor to avoid losing totals
+        entry.minor += 1;
+      }
+      entry.total += 1;
+    }
+    return map;
+  };
+
   useEffect(() => {
     const fetchDashboard = async () => {
       setLoading(true);
       try {
-        const res = await fetch("http://192.168.100.88/SDSUpdate1-main/backend/Dashboard.php");
+        const res = await fetch(DASHBOARD_API);
         const data = await res.json();
-        // Backend returns arrays shaped as:
-        // { sanctions: [{name, value}], violationsByDept: [{department, violations}], monthlyViolations: [{month, total}] }
         setSanctionData(Array.isArray(data.sanctions) ? data.sanctions : []);
-        setViolationByDept(Array.isArray(data.violationsByDept) ? data.violationsByDept : []);
+
+        const rawViolations = Array.isArray(data.violationsByDept) ? data.violationsByDept : [];
+
+        const normalized = rawViolations.map((r) => {
+          const minorCandidates = ["minor", "minor_count", "minors", "minorTotal", "minor_total", "minor_count_total", "minor_counted"];
+          const majorCandidates = ["major", "major_count", "majors", "majorTotal", "major_total", "major_count_total", "major_counted"];
+          const totalCandidates = ["violations", "total", "count", "violations_count", "num"];
+
+          const minorVal = extractNumber(r, minorCandidates);
+          const majorVal = extractNumber(r, majorCandidates);
+          const totalVal = extractNumber(r, totalCandidates);
+
+          const { dept, grade } = readDeptGrade(r);
+          const normalizedDG = normalizeDeptGrade(dept, grade);
+
+          return {
+            ...r,
+            _dept: normalizedDG.dept ?? null,
+            _grade: normalizedDG.grade ?? null,
+            minor: minorVal != null ? minorVal : null,
+            major: majorVal != null ? majorVal : null,
+            total: totalVal != null ? totalVal : null,
+          };
+        });
+
+        // If normalized rows have no explicit minor/major info, try to fetch incidents and compute
+        const needAggregation = normalized.length > 0 && normalized.every((r) => r.minor == null && r.major == null);
+        let incidentsMap = null;
+
+        if (needAggregation) {
+          try {
+            const incRes = await fetch(INCIDENTS_API);
+            const incData = await incRes.json();
+            const incidents = Array.isArray(incData) ? incData : (Array.isArray(incData.data) ? incData.data : []);
+            if (incidents.length > 0) {
+              incidentsMap = aggregateFromIncidents(incidents);
+            }
+          } catch (e) {
+            // Fail silently and keep normalized (fallback)
+            console.warn("Failed to fetch incidents for aggregation:", e);
+            incidentsMap = null;
+          }
+        }
+
+        // Merge aggregated counts into normalized rows (when available). Also include rows that appear only in incidents.
+        const mergedMap = new Map();
+
+        // First add normalized rows (normalize their keys and merge duplicates)
+        for (const r of normalized) {
+          const normalizedDG = normalizeDeptGrade(r._dept, r._grade);
+          const key = groupKey(normalizedDG.dept ?? null, normalizedDG.grade ?? null);
+
+          const minor = r.minor != null ? Number(r.minor) : null;
+          const major = r.major != null ? Number(r.major) : null;
+          const total = r.total != null ? Number(r.total) : null;
+
+          if (!mergedMap.has(key)) {
+            mergedMap.set(key, {
+              department: normalizedDG.dept ?? null,
+              grade: normalizedDG.grade ?? null,
+              minor: minor,
+              major: major,
+              total: total
+            });
+          } else {
+            // sum counts when duplicate normalized rows exist
+            const ex = mergedMap.get(key);
+            ex.minor = (ex.minor || 0) + (minor || 0);
+            ex.major = (ex.major || 0) + (major || 0);
+            ex.total = (ex.total || 0) + (total || 0);
+            mergedMap.set(key, ex);
+          }
+        }
+
+        // Merge incidents-derived aggregates
+        if (incidentsMap) {
+          for (const [k, v] of incidentsMap.entries()) {
+            if (mergedMap.has(k)) {
+              const existing = mergedMap.get(k);
+              existing.minor = (existing.minor != null ? existing.minor : 0) + (v.minor || 0);
+              existing.major = (existing.major != null ? existing.major : 0) + (v.major || 0);
+              existing.total = (existing.total != null ? existing.total : 0) + (v.total || 0);
+              mergedMap.set(k, existing);
+            } else {
+              mergedMap.set(k, { department: v.dept ?? null, grade: v.grade ?? null, minor: v.minor || 0, major: v.major || 0, total: v.total || 0 });
+            }
+          }
+        }
+
+        // If dashboard had no rows at all, but incidents produced rows, use incidentsMap
+        if (normalized.length === 0 && incidentsMap) {
+          for (const [k, v] of incidentsMap.entries()) {
+            mergedMap.set(k, { department: v.dept ?? null, grade: v.grade ?? null, minor: v.minor || 0, major: v.major || 0, total: v.total || 0 });
+          }
+        }
+
+        // Convert mergedMap to array in stable order
+        const finalRows = Array.from(mergedMap.values()).map((r) => ({
+          ...r,
+        }));
+
+        setViolationByDept(finalRows);
         setMonthlyViolations(Array.isArray(data.monthlyViolations) ? data.monthlyViolations : []);
       } catch (err) {
         console.error("Failed to load dashboard data", err);
@@ -106,32 +357,48 @@ function DashboardPage({ user }) {
         <div className="card">
           <h3>Total of Students Violations</h3>
           <div className="table-scroll-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Department / Grade</th>
-                  <th>Violations</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
+            <div className="table-body-scroll">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={2}>Loading...</td>
+                    <th>Department / Grade</th>
+                    <th>Minor</th>
+                    <th>Major</th>
                   </tr>
-                )}
-                {!loading && violationByDept.length === 0 && (
-                  <tr>
-                    <td colSpan={2}>No data</td>
-                  </tr>
-                )}
-                {violationByDept.map((row, index) => (
-                  <tr key={index}>
-                    <td>{row.department}</td>
-                    <td>{row.violations}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {loading && (
+                    <tr>
+                      <td colSpan={3}>Loading...</td>
+                    </tr>
+                  )}
+                  {!loading && violationByDept.length === 0 && (
+                    <tr>
+                      <td colSpan={3}>No data</td>
+                    </tr>
+                  )}
+                  {violationByDept.map((row, index) => {
+                    // Prefer explicit minor/major if present; fallback to total->minor if necessary
+                    const minorCount = (row.minor != null) ? Number(row.minor) : (row.total != null ? Number(row.total) : 0);
+                    const majorCount = (row.major != null) ? Number(row.major) :
+                      // If total present and minor present, infer major as total-minor
+                      (row.total != null && row.minor != null ? Math.max(0, Number(row.total) - Number(row.minor)) : 0);
+
+                    const deptText = row.department ? String(row.department).trim() : null;
+                    const gradeText = row.grade ? String(row.grade).trim() : null;
+                    const label = deptText ? (gradeText ? `${deptText} / ${gradeText}` : deptText) : (gradeText ? gradeText : "—");
+
+                    return (
+                      <tr key={index}>
+                        <td>{label}</td>
+                        <td>{Number(minorCount) || 0}</td>
+                        <td>{Number(majorCount) || 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

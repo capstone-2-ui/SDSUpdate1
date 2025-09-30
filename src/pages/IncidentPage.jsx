@@ -260,21 +260,22 @@ function IncidentPage({ user }) {
           incident: incidentRow,
         }),
       });
-
+      
       const data = await res.json();
-
       if (res.ok && data.success) {
         showNotifyToast(data.message || "Notification sent successfully!");
       } else {
         const errorMessage = data.message || `Failed to send notification (HTTP ${res.status}).`;
         alert(`Error: ${errorMessage}`);
       }
+      
       return data;
-
+      
     } catch (err) {
       console.error("sendBackendNotification error:", err);
       alert("A network error occurred while trying to send the notification.");
       return { success: false, message: String(err) };
+      
     }
   };
   // --- end notification helpers ---
@@ -1450,7 +1451,7 @@ case "Process":
                           ) : (
                             <button disabled title="Only available for Major offenses">Major Process</button>
                           )}
-                          <button onClick={() => handleMenuAction("Send Notification", v)}>Send Notification</button>
+                          
                           <button onClick={() => handleMenuAction("Delete", v)}>Delete</button>
                         </div>
                       ),
@@ -1559,7 +1560,7 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
       </div>
       <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
         <button onClick={onClose} style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: '4px', background: '#774f04ff' , color: 'white' }}>Cancel</button>
-        <button onClick={handleApply} style={{ padding: '6px 12px', border: '1px solide #ccc', borderRadius: '4px', background: '#774f04ff', color: 'white' }}>Apply</button>
+        <button onClick={handleApply} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', background: '#774f04ff', color: 'white' }}>Apply</button>
       </div>
     </div>
   );
@@ -1612,14 +1613,14 @@ function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null
     width: 72,
     height: 72,
     borderRadius: 12,
-    background: "#2d6cdf",
+    background: "#804604ff",
     color: "#fff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontSize: 24,
     fontWeight: 700,
-    boxShadow: "0 4px 12px rgba(45,108,223,0.12)",
+    boxShadow: "0 4px 12px rgba(170, 223, 45, 0.12)",
   };
 
   const nameStyle = { fontSize: 18, fontWeight: 700, marginBottom: 4 };
@@ -1730,9 +1731,9 @@ function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null
               style={{
                 padding: "8px 12px",
                 borderRadius: 8,
-                border: "1px solid #065f46",
-                background: hasEmail ? "#065f46" : "#fff",
-                color: hasEmail ? "#fff" : "#065f46",
+                border: "1px solid #6b4009ff",
+                background: hasEmail ? "#6b4009ff" : "#fff",
+                color: hasEmail ? "#fff" : "#6b4009ff",
                 cursor: "pointer",
               }}
             >
@@ -1740,7 +1741,7 @@ function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null
             </button>
           ) : null}
 
-          <button onClick={onClose} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#111827", color: "#fff", cursor: "pointer" }}>
+          <button onClick={onClose} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#6b4009ff", color: "#fff", cursor: "pointer" }}>
             Close
           </button>
         </div>
@@ -2279,7 +2280,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       case 1:
         return (
           <div className="major-modal-step">
-            <label>Incident Report</label>
+            <label>Incident Report or Complaint</label>
             <textarea
               placeholder="Write incident report..."
               value={steps.step1.incidentReport ?? ""}
@@ -2291,6 +2292,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       case 2:
         return (
           <div className="major-modal-step">
+            <label><strong>Commitee Discipline Formed</strong></label>
             <div className="major-modal-committee">
               <div>
                 <label>Appointed Chair or College Dean</label>
@@ -2318,6 +2320,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       case 3:
         return (
           <div className="major-modal-step">
+            <label><strong>Hearing Details</strong></label>
             <div className="major-modal-checkboxes">
               <label><input type="checkbox" checked={!!steps.step3.complainant} onChange={(e) => setStepField("step3", { ...steps.step3, complainant: e.target.checked })} /> Complainant present</label>
               <label><input type="checkbox" checked={!!steps.step3.respondentPresent} onChange={(e) => setStepField("step3", { ...steps.step3, respondentPresent: e.target.checked })} /> Respondent present</label>
@@ -2333,6 +2336,8 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       case 4:
         return (
           <div className="major-modal-step">
+            <strong>Sanction Imposing</strong>
+            <label>Based on the hearing and investigation, choose an appropriate sanction for the student.</label>
             <label>Choose a Sanction</label>
             <div className="sanction-row">
               <select
@@ -2371,7 +2376,8 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       case 5:
         return (
           <div className="major-modal-step">
-            <label>Decision Approval</label>
+            <strong>Decision Approval</strong>
+            <label>Final decision is approved by the RCC President</label>
             <select value={steps.step5.decisionApproval ?? ""} onChange={(e) => setStepField("step5", { ...steps.step5, decisionApproval: e.target.value })}>
               <option value="">Select</option>
               <option value="Yes">Yes</option>
