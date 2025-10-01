@@ -68,6 +68,11 @@ export default function Login({ onLogin }) {
             <h1 className="login-title">STUDENT</h1>
             <h1 className="login-title">DISCIPLINE</h1>
             <h1 className="login-title">SYSTEM</h1>
+
+            {/* Added subtitle - smaller and not bold */}
+            <div className="login-subtitle">
+              Enhancing Transparency and Accountability in Student Violations
+            </div>
           </div>
         </div>
         <div className="login-right">

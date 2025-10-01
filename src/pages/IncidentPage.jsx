@@ -2127,7 +2127,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
 
   // ---- new screenshot state & helpers ----
   // screenshotPreview stores a data URL (or null); steps.step1.screenshot will also contain the dataURL
-  const [screenshotPreview, setScreenshotPreview] = useState(steps.step1?.screenshot ?? null);
+  const [screenshotPreview, setScreenshotPreview] = useState((steps.step1?.screenshots && Array.isArray(steps.step1.screenshots)) ? steps.step1.screenshots.map(s => ({ url: s.screenshot || s, name: s.screenshotName })) : []);
 
   // keep preview in sync when steps are loaded/changed externally
   useEffect(() => {

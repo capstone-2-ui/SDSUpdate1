@@ -63,6 +63,17 @@
   letter-spacing: 0.6px;
 }
 
+/* Subtitle under the title */
+.login-subtitle {
+  font-size: 10px;         /* slightly smaller than the main titles */
+  font-weight: 500;        /* not bold */
+  color: #000000;             /* tweak color to match your theme */
+  margin-top: 6px;         /* small gap from the main titles */
+  line-height: 1.2;
+  max-width: 250px;        /* avoid wrapping too wide on small cards */
+  letter-spacing: 1px;
+}
+
 /* Right: form */
 .login-right {
   width: 360px;
