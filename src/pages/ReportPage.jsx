@@ -3,11 +3,11 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { FaFileExport, FaFilter } from "react-icons/fa";
 import "./ReportPage.css";
 
-const INCIDENT_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Incident.php";
-const GRADE_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Grade.php";
-const SECTION_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Section.php";
-const STRAND_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Strand.php";
-const DEPARTMENT_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Department.php";
+const INCIDENT_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
+const GRADE_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Grade.php";
+const SECTION_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Section.php";
+const STRAND_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Strand.php";
+const DEPARTMENT_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Department.php";
 
 const ReportPage = ({ user }) => {
   const [filters, setFilters] = useState({

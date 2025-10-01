@@ -4,7 +4,7 @@ import "./StrandPage.css";
 import { FaEdit, FaTrash, FaUserCircle } from "react-icons/fa";
 
 export default function StrandPage({ user }) {
-  const API_URL = "http://192.168.0.110/SDSUpdate1-main/backend/Strand.php"; // adjust if needed
+  const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Strand.php"; // adjust if needed
 
   const [strands, setStrands] = useState([]);
   const [filteredStrands, setFilteredStrands] = useState([]);

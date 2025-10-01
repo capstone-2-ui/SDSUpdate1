@@ -10,7 +10,7 @@ header("Content-Type: application/json; charset=UTF-8");
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $allowed_origins = [
     'http://localhost:3000',
-    'http://192.168.0.110:3000',
+    'http://192.168.100.88:3000',
 ];
 
 if (in_array($origin, $allowed_origins)) {
@@ -43,6 +43,106 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+/**
+ * Utility: recursively scan an array and replace any data:... base64 image values with files written to disk.
+ * Returns the modified array.
+ */
+function saveDataUrlsRecursively($value, $student_id = '')
+{
+    // Only process arrays (associative) or strings. If value is scalar other than string, return as-is.
+    if (is_array($value)) {
+        foreach ($value as $k => $v) {
+            $value[$k] = saveDataUrlsRecursively($v, $student_id);
+        }
+        return $value;
+    }
+
+    if (!is_string($value)) return $value;
+
+    // Only attempt to process data URLs. e.g. data:image/png;base64,AAAA...
+    if (stripos($value, 'data:') !== 0) return $value;
+
+    // pattern match: data:<mime>;base64,<data>
+    if (!preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s', $value, $matches)) {
+        // not a recognized data URL we can handle; return as-is
+        return $value;
+    }
+
+    $mime = $matches[1];
+    $b64 = $matches[2];
+
+    $decoded = base64_decode($b64);
+    if ($decoded === false) return $value;
+
+    // safety: enforce a maximum bytes (50MB)
+    $MAX_BYTES = 50 * 1024 * 1024;
+    if (strlen($decoded) > $MAX_BYTES) {
+        // too big -> keep original (frontend also limits) but we could also null it
+        return $value;
+    }
+
+    // determine extension
+    $ext = 'bin';
+    $map = [
+        'image/jpeg' => 'jpg',
+        'image/jpg'  => 'jpg',
+        'image/png'  => 'png',
+        'image/gif'  => 'gif',
+        'image/webp' => 'webp',
+        'image/svg+xml' => 'svg',
+    ];
+    if (isset($map[strtolower($mime)])) $ext = $map[strtolower($mime)];
+    else {
+        $parts = explode('/', $mime);
+        $ext = end($parts);
+    }
+
+    // prepare upload directory
+    $uploadsDir = __DIR__ . '/uploads/major_offense';
+    if (!is_dir($uploadsDir)) {
+        @mkdir($uploadsDir, 0777, true);
+    }
+
+    // generate filename
+    try {
+        $rand = bin2hex(random_bytes(6));
+    } catch (Exception $e) {
+        $rand = substr(md5(uniqid('', true)), 0, 12);
+    }
+    $safeStudent = preg_replace('/[^a-zA-Z0-9_\-]/', '_', (string)$student_id);
+    $filename = 'mo_' . ($safeStudent ?: 'anon') . '_' . time() . '_' . $rand . '.' . $ext;
+    $filePath = $uploadsDir . '/' . $filename;
+
+    $written = @file_put_contents($filePath, $decoded);
+    if ($written === false) {
+        // on failure, return original data URL (so nothing breaks)
+        return $value;
+    }
+
+    // Build a HTTP-accessible URL to the newly saved file.
+    // Determine base path of this script (e.g. /SDSUpdate1-main/backend)
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+    $url = $scheme . '://' . $host . $base . '/uploads/major_offense/' . $filename;
+
+    return $url;
+}
+
+/**
+ * Convenience: run saveDataUrlsRecursively on known step fields in $arr.
+ * This is conservative but covers typical shape: ['step1'=>[..., 'screenshot'=> 'data:...'], ...]
+ */
+function processDataUrlsInSteps($arr, $student_id = '')
+{
+    if (!is_array($arr)) return $arr;
+    foreach ($arr as $k => $v) {
+        // process every value recursively -- lightweight enough
+        $arr[$k] = saveDataUrlsRecursively($v, $student_id);
+    }
+    return $arr;
+}
 
 if ($method === 'GET') {
     // GET by record id
@@ -138,6 +238,14 @@ if ($method === 'POST') {
     if ($payload && (isset($payload['record_id']) || isset($payload['id'])) && isset($payload['data'])) {
         $rid = isset($payload['record_id']) ? $payload['record_id'] : $payload['id'];
         $fullData = $payload['data'];
+
+        // Save any embedded data URLs to disk and replace with URLs
+        try {
+            $fullData = processDataUrlsInSteps($fullData, $payload['student_id'] ?? '');
+        } catch (Exception $e) {
+            // ignore processing errors and proceed with original data
+        }
+
         $completed = 0;
         for ($i = 1; $i <= 5; $i++) {
             if (!empty($fullData['step' . $i])) $completed++;
@@ -152,6 +260,14 @@ if ($method === 'POST') {
     if ($payload && isset($payload['student_id']) && isset($payload['data']) && !isset($payload['step'])) {
         $student_id = (string)$payload['student_id'];
         $fullData = $payload['data'];
+
+        // process data URLs
+        try {
+            $fullData = processDataUrlsInSteps($fullData, $student_id);
+        } catch (Exception $e) {
+            // ignore processing errors
+        }
+
         $completed = 0;
         for ($i = 1; $i <= 5; $i++) {
             if (!empty($fullData['step' . $i])) $completed++;
@@ -202,6 +318,14 @@ if ($method === 'POST') {
         if ($row) {
             $existing = json_decode($row['data'], true) ?: [];
             $existing['step' . $step] = $stepData;
+
+            // process any data URLs inside the new step before saving
+            try {
+                $existing = processDataUrlsInSteps($existing, $student_id);
+            } catch (Exception $e) {
+                // ignore
+            }
+
             $completed = 0;
             for ($i = 1; $i <= 5; $i++) {
                 if (!empty($existing['step' . $i])) $completed++;
@@ -220,6 +344,13 @@ if ($method === 'POST') {
     if ($forceNew) {
         $new = [];
         $new['step' . $step] = $stepData;
+
+        try {
+            $new = processDataUrlsInSteps($new, $student_id);
+        } catch (Exception $e) {
+            // ignore
+        }
+
         $completed = 0;
         for ($i = 1; $i <= 5; $i++) {
             if (!empty($new['step' . $i])) $completed++;
@@ -239,6 +370,13 @@ if ($method === 'POST') {
     if ($row) {
         $existing = json_decode($row['data'], true) ?: [];
         $existing['step' . $step] = $stepData;
+
+        try {
+            $existing = processDataUrlsInSteps($existing, $student_id);
+        } catch (Exception $e) {
+            // ignore
+        }
+
         $completed = 0;
         for ($i = 1; $i <= 5; $i++) {
             if (!empty($existing['step' . $i])) $completed++;
@@ -250,6 +388,13 @@ if ($method === 'POST') {
     } else {
         $new = [];
         $new['step' . $step] = $stepData;
+
+        try {
+            $new = processDataUrlsInSteps($new, $student_id);
+        } catch (Exception $e) {
+            // ignore
+        }
+
         $completed = 0;
         for ($i = 1; $i <= 5; $i++) {
             if (!empty($new['step' . $i])) $completed++;

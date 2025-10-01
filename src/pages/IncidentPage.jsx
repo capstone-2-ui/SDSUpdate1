@@ -14,8 +14,8 @@ import "./IncidentPage.css";
 */
 
 function IncidentPage({ user }) {
-  const API_BASE = "http://192.168.0.110/SDSUpdate1-main/backend/Incident.php";
-  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
+  const API_BASE = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const STORAGE_KEY = "SDS:selectedStudent";
 
   const location = useLocation();
@@ -1489,7 +1489,7 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
 
   const [violationOptions, setViolationOptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
 
   useEffect(() => {
     setViolation(initialFilters.violation);
@@ -1761,7 +1761,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
 
   useEffect(() => setLocal({ ...initial }), [initial]);
 
-  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const [departments, setDepartments] = useState([]);
   const [grades, setGrades] = useState([]);
   const [strands, setStrands] = useState([]);
@@ -2104,7 +2104,7 @@ local, id: undefined, incident_id: undefined };
    MajorOffenseModal (enhanced: local step state and Next/Back navigation)
    ------------------------- */
 function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async () => ({}), onClose = () => {} }) {
-  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const [currentStep, setCurrentStep] = useState(step || 1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2267,6 +2267,23 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       });
       const json = await res.json().catch(() => ({ success: true }));
       if (json && json.success) {
+        // If the server returned the full stored data, merge it into local state
+        if (json.data && typeof json.data === "object") {
+          setSteps((prev) => {
+            // copy prev and merge returned fields (preserve other local temporary fields)
+            const merged = { ...prev };
+            for (let i = 1; i <= 5; i++) {
+              if (json.data[`step${i}`] !== undefined) {
+                merged[`step${i}`] = json.data[`step${i}`];
+              }
+            }
+            return merged;
+          });
+          // also set preview specifically if screenshot was saved/converted to URL
+          if (json.data[`step${stepNum}`] && json.data[`step${stepNum}`].screenshot) {
+            setScreenshotPreview(json.data[`step${stepNum}`].screenshot);
+          }
+        }
         setMessage({ type: "success", text: `Step ${stepNum} saved.` });
         return { success: true, data: json };
       } else {
@@ -2298,6 +2315,23 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
       });
       const json = await res.json().catch(() => ({ success: true }));
       if (json && json.success) {
+        // If server returned canonical data, replace local steps with it
+        if (json.data && typeof json.data === "object") {
+          setSteps((prev) => {
+            // merge server data into local, but preserve any local transient fields not present on server
+            const merged = { ...prev };
+            for (let i = 1; i <= 5; i++) {
+              if (json.data[`step${i}`] !== undefined) {
+                merged[`step${i}`] = json.data[`step${i}`];
+              }
+            }
+            return merged;
+          });
+          // refresh preview if server returned screenshot for step1
+          if (json.data.step1 && json.data.step1.screenshot) {
+            setScreenshotPreview(json.data.step1.screenshot);
+          }
+        }
         setMessage({ type: "success", text: "All steps saved and form persisted." });
         try { onSave && onSave(json); } catch {}
         return { success: true, data: json };
@@ -2350,7 +2384,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
 
             {/* --- Screenshot / supporting document uploader (added) --- */}
             <div style={{ marginTop: 12 }}>
-              <label style={{ display: "block", marginBottom: 8 }}>Upload Supporting Document (optional)</label>
+              <label style={{ display: "block", marginBottom: 8 }}>Upload Supporting Evidence or Proof</label>
 
               <div
                 onDrop={handleDrop}
@@ -2367,7 +2401,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                   cursor: "pointer",
                   background: "#fff",
                 }}
-                aria-label="Upload supporting document"
+                aria-label="Upload supporting evidence or proof (drag and drop or click to browse)"
               >
                 <input
                   id="major-screenshot-input"
@@ -2382,36 +2416,43 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                     <img
                       src={screenshotPreview}
                       alt="preview"
-                      style={{ maxHeight: 84, maxWidth: 140, objectFit: "contain", borderRadius: 6, border: "1px solid #eef2f7" }}
+                      style={{ maxHeight: 84, maxWidth: 140, objectFit: "contain", borderRadius: 4, border: "1px solid #eef2f7" }}
                     />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700 }}>{steps.step1?.screenshotName ?? "Attached image"}</div>
                       <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                        Preview shown. Click to replace or use Remove to delete.
+                        {typeof steps.step1.screenshot === "string" ? steps.step1.screenshot : "Embedded data URL"}
                       </div>
 
-                      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                        <button type="button" onClick={() => document.getElementById("major-screenshot-input")?.click()} style={{ padding: "6px 10px", cursor: "pointer" }}>
-                          Replace
-                        </button>
-                        <button type="button" onClick={handleRemoveScreenshot} style={{ padding: "6px 10px", cursor: "pointer" }}>
-                          Remove
-                        </button>
+                      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
                         <button
-                          type="button"
                           onClick={() => {
                             try {
-                              navigator.clipboard?.writeText(steps.step1?.screenshot ?? "");
-                              setMessage({ type: "success", text: "Image data URL copied to clipboard" });
-                              setTimeout(() => setMessage(null), 1800);
+                              const url = steps.step1.screenshot;
+                              if (!url) return;
+                              window.open(url, "_blank", "noopener,noreferrer");
                             } catch (err) {
-                              setMessage({ type: "error", text: "Unable to copy" });
+                              alert("Unable to open file.");
                             }
                           }}
-                          style={{ padding: "6px 10px", cursor: "pointer" }}
+                          style={{ padding: "8px 10px", cursor: "pointer" }}
                         >
-                          Copy Data URL
+                          Open
                         </button>
+
+                        <a
+                          href={steps.step1.screenshot}
+                          download={steps.step1.screenshotName || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: "none" }}
+                        >
+                          <button style={{ padding: "8px 10px", cursor: "pointer" }}>Download</button>
+                        </a>
+                      </div>
+
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                        Tip: If preview doesn't appear, click "Open" to view the file in a new tab.
                       </div>
                     </div>
                   </div>
@@ -2620,6 +2661,69 @@ function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, 
         <div style={labelStyle}><strong>Incident Report or Complaint:</strong></div>
         <div style={valueStyle}>{s1.incidentReport ?? "—"}</div>
       </div>
+
+      {/* --- Supporting Document preview (added) --- */}
+      <div style={section}>
+        <div style={heading}>Supporting Evidence or Proof</div>
+        <div style={labelStyle}><strong>Attached file:</strong></div>
+
+        {s1.screenshot ? (
+          <div style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ maxWidth: 360, maxHeight: 260, border: "1px solid #eee", padding: 8, borderRadius: 6, background: "#fff" }}>
+              <img
+                src={s1.screenshot}
+                alt={s1.screenshotName ?? "Supporting document"}
+                style={{ display: "block", maxWidth: "100%", maxHeight: 240, objectFit: "contain", borderRadius: 4 }}
+                onError={(e) => {
+                  // hide broken image visually (keeps the links below)
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            </div>
+
+            <div style={{ minWidth: 220, flex: "1 1 220px" }}>
+              <div style={{ fontWeight: 700 }}>{s1.screenshotName ?? (typeof s1.screenshot === "string" ? s1.screenshot.split("/").pop() : "Attached file")}</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6, wordBreak: "break-all" }}>
+                {typeof s1.screenshot === "string" ? s1.screenshot : "Embedded data URL"}
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => {
+                    try {
+                      const url = s1.screenshot;
+                      if (!url) return;
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    } catch (err) {
+                      alert("Unable to open file.");
+                    }
+                  }}
+                  style={{ padding: "8px 10px", cursor: "pointer" }}
+                >
+                  Open
+                </button>
+
+                <a
+                  href={s1.screenshot}
+                  download={s1.screenshotName || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ textDecoration: "none" }}
+                >
+                  <button style={{ padding: "8px 10px", cursor: "pointer" }}>Download</button>
+                </a>
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                Tip: If preview doesn't appear, click "Open" to view the file in a new tab.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, color: "#6b7280" }}>No supporting Evidence attached.</div>
+        )}
+      </div>
+      {/* --- end supporting document preview --- */}
 
       <div style={section}>
         <div style={heading}>Commitee Discipline Formed</div>
