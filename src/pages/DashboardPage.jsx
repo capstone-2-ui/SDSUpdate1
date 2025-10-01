@@ -23,8 +23,8 @@ function DashboardPage({ user }) {
   const COLORS = ["#d2a56a", "#a4702d", "#5b3d1e", "#bfa176", "#8f6a3f"];
   const LINE_COLORS = { total: "#555", minor: "#555", major: "#555" };
 
-  const DASHBOARD_API = "http://192.168.100.88/SDSUpdate1-main/backend/Dashboard.php";
-  const INCIDENTS_API = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
+  const DASHBOARD_API = "http://192.168.0.110/SDSUpdate1-main/backend/Dashboard.php";
+  const INCIDENTS_API = "http://192.168.0.110/SDSUpdate1-main/backend/Incident.php";
 
   // Helper: robustly extract numeric value from an object using candidate keys
   const extractNumber = (obj = {}, candidates = []) => {

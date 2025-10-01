@@ -14,8 +14,8 @@ import "./IncidentPage.css";
 */
 
 function IncidentPage({ user }) {
-  const API_BASE = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
-  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
+  const API_BASE = "http://192.168.0.110/SDSUpdate1-main/backend/Incident.php";
+  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
   const STORAGE_KEY = "SDS:selectedStudent";
 
   const location = useLocation();
@@ -1489,7 +1489,7 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
 
   const [violationOptions, setViolationOptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
 
   useEffect(() => {
     setViolation(initialFilters.violation);
@@ -1761,7 +1761,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
 
   useEffect(() => setLocal({ ...initial }), [initial]);
 
-  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
   const [departments, setDepartments] = useState([]);
   const [grades, setGrades] = useState([]);
   const [strands, setStrands] = useState([]);
@@ -1845,7 +1845,9 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
       return;
     }
     // normalize id field: backend may expect `id` or `incident_id`
-    const payload = { ...local, id: local.id ?? local.incident_id ?? local.incidentId };
+    const payload = { ...
+
+local, id: undefined, incident_id: undefined };
 
     setSaving(true);
     setStatusMessage(null);
@@ -2102,7 +2104,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
    MajorOffenseModal (enhanced: local step state and Next/Back navigation)
    ------------------------- */
 function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async () => ({}), onClose = () => {} }) {
-  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.0.110/SDSUpdate1-main/backend";
   const [currentStep, setCurrentStep] = useState(step || 1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2122,6 +2124,68 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
   // NEW: store only Major-type sanctions
   const [sanctionOptions, setSanctionOptions] = useState([]);
   const [sanctionLoading, setSanctionLoading] = useState(false);
+
+  // ---- new screenshot state & helpers ----
+  // screenshotPreview stores a data URL (or null); steps.step1.screenshot will also contain the dataURL
+  const [screenshotPreview, setScreenshotPreview] = useState(steps.step1?.screenshot ?? null);
+
+  // keep preview in sync when steps are loaded/changed externally
+  useEffect(() => {
+    setScreenshotPreview(steps.step1?.screenshot ?? null);
+  }, [steps.step1?.screenshot]);
+
+  // helper used to update steps and clear messages
+  const setStepField = (which, value) => {
+    setSteps((p) => ({ ...p, [which]: value }));
+    setMessage(null);
+  };
+
+  // file validation + base64 conversion
+  const handleScreenshotFile = (file) => {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith("image/")) {
+      setMessage({ type: "error", text: "Only image files are allowed." });
+      return;
+    }
+    const MAX_BYTES = 50 * 1024 * 1024; // 3MB limit
+    if (file.size > MAX_BYTES) {
+      setMessage({ type: "error", text: "File is too large. Maximum 50MB." });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      // store data URL and original filename
+      setStepField("step1", { ...steps.step1, screenshot: dataUrl, screenshotName: file.name });
+      setScreenshotPreview(dataUrl);
+      setMessage(null);
+    };
+    reader.onerror = () => {
+      setMessage({ type: "error", text: "Failed to read file." });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e) => {
+    const f = e.target && e.target.files && e.target.files[0];
+    if (f) handleScreenshotFile(f);
+    // reset input so same file can be selected again if needed
+    if (e.target) e.target.value = "";
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const f = e.dataTransfer?.files?.[0];
+    if (f) handleScreenshotFile(f);
+  };
+
+  const handleRemoveScreenshot = () => {
+    setStepField("step1", { ...steps.step1, screenshot: null, screenshotName: null });
+    setScreenshotPreview(null);
+  };
+  // ---- end screenshot helpers ----
 
   // load any existing saved record for this student on mount
   useEffect(() => {
@@ -2186,11 +2250,6 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
     fetchSanctions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const setStepField = (which, value) => {
-    setSteps((p) => ({ ...p, [which]: value }));
-    setMessage(null);
-  };
 
   const saveStepToServer = async (stepNum) => {
     const sid = getSid();
@@ -2288,6 +2347,84 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
               onChange={(e) => setStepField("step1", { ...steps.step1, incidentReport: e.target.value })}
               rows={8}
             />
+
+            {/* --- Screenshot / supporting document uploader (added) --- */}
+            <div style={{ marginTop: 12 }}>
+              <label style={{ display: "block", marginBottom: 8 }}>Upload Supporting Document (optional)</label>
+
+              <div
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                onClick={() => document.getElementById("major-screenshot-input")?.click()}
+                style={{
+                  border: "2px dashed #d1d5db",
+                  borderRadius: 8,
+                  padding: 12,
+                  minHeight: 96,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  cursor: "pointer",
+                  background: "#fff",
+                }}
+                aria-label="Upload supporting document"
+              >
+                <input
+                  id="major-screenshot-input"
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleFileChange}
+                />
+
+                {screenshotPreview ? (
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", width: "100%" }}>
+                    <img
+                      src={screenshotPreview}
+                      alt="preview"
+                      style={{ maxHeight: 84, maxWidth: 140, objectFit: "contain", borderRadius: 6, border: "1px solid #eef2f7" }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700 }}>{steps.step1?.screenshotName ?? "Attached image"}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                        Preview shown. Click to replace or use Remove to delete.
+                      </div>
+
+                      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                        <button type="button" onClick={() => document.getElementById("major-screenshot-input")?.click()} style={{ padding: "6px 10px", cursor: "pointer" }}>
+                          Replace
+                        </button>
+                        <button type="button" onClick={handleRemoveScreenshot} style={{ padding: "6px 10px", cursor: "pointer" }}>
+                          Remove
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              navigator.clipboard?.writeText(steps.step1?.screenshot ?? "");
+                              setMessage({ type: "success", text: "Image data URL copied to clipboard" });
+                              setTimeout(() => setMessage(null), 1800);
+                            } catch (err) {
+                              setMessage({ type: "error", text: "Unable to copy" });
+                            }
+                          }}
+                          style={{ padding: "6px 10px", cursor: "pointer" }}
+                        >
+                          Copy Data URL
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, textAlign: "center", color: "#6b7280" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Upload Documents</div>
+                    <div style={{ fontSize: 13 }}>Drag and drop files here</div>
+                    <div style={{ fontSize: 12, marginTop: 6 }}>or click to browse (images only, max 50MB)</div>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* --- end uploader --- */}
           </div>
         );
       case 2:

@@ -5,7 +5,7 @@
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $allowed_origins = [
     "http://localhost:3000",
-    "http://192.168.100.88:3000"
+    "http://192.168.0.110:3000"
 ];
 
 if (in_array($origin, $allowed_origins)) {
