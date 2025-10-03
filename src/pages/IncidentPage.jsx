@@ -921,20 +921,23 @@ if (result.success) {
               content: (
                 <StudentProfileModal
                   student={full}
-                  // onClose closes the modal
+                  resolveViolationLabel={resolveViolationLabel}
                   onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
-                  // onNotify calls the page-level helper which opens mail client (uses email from record)
                   onNotify={(studentFromModal) => {
-                    // Prefer to call backend so server sends a real email
                     (async () => {
-                      const result = await sendBackendNotification(studentFromModal || full);
+                      // Build a copy and attach a readable violation label so backend email contains the human text
+                      const original = studentFromModal || full || {};
+                      const rawV = original.violation ?? original.violation_description ?? "";
+                      const resolvedV = typeof resolveViolationLabel === "function" ? resolveViolationLabel(rawV) : String(rawV || "");
+                      const incidentToSend = { ...original, violation: resolvedV, violation_label: resolvedV };
+
+                      const result = await sendBackendNotification(incidentToSend);
                       if (result && result.success) {
                         showNotifyToast(result.message || "Notification sent successfully!");
                       } else {
                         const errMsg = result?.message || "Failed to send notification via server.";
                         // fallback to opening mail client if backend failed
                         if (window.confirm(errMsg + " Open mail client instead?")) {
-                          // call the existing mailto fallback
                           const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
                           await sendNotificationEmail(studentFromModal || full, explicitEmail);
                         }
@@ -955,16 +958,21 @@ if (result.success) {
               content: (
                 <StudentProfileModal
                   student={row}
+                  resolveViolationLabel={resolveViolationLabel}
                   onClose={() => setModal({ open: false, title: "", content: null, pos: null, noHeader: false })}
                   onNotify={(studentFromModal) => {
-                    // Prefer to call backend so server sends a real email
                     (async () => {
-                      const result = await sendBackendNotification(studentFromModal || row);
+                      const original = studentFromModal || row || {};
+                      const rawV = original.violation ?? original.violation_description ?? "";
+                      const resolvedV = typeof resolveViolationLabel === "function" ? resolveViolationLabel(rawV) : String(rawV || "");
+                      const incidentToSend = { ...original, violation: resolvedV, violation_label: resolvedV };
+
+                      const result = await sendBackendNotification(incidentToSend);
                       if (result && result.success) {
                         showNotifyToast(result.message || "Notification sent successfully!");
                       } else {
                         const errMsg = result?.message || "Failed to send notification via server.";
-                        // fallback: prompt to open mail client if backend failed
+                        // fallback to opening mail client if backend failed
                         if (window.confirm(errMsg + " Open mail client instead?")) {
                           const explicitEmail = (studentFromModal && (studentFromModal.email || studentFromModal.student_email || studentFromModal.Email || studentFromModal.email_address)) || null;
                           await sendNotificationEmail(studentFromModal || row, explicitEmail);
@@ -1572,7 +1580,7 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
          It returns a single top-level container whose background is transparent so
          it renders as a single modal container inside the page-level modal wrapper.
    ------------------------- */
-function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null }) {
+function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null, resolveViolationLabel = null }) {
   // helper to safely read fields (tries multiple common keys)
   const get = (keys, fallback = "—") => {
     for (const k of (keys || [])) {
@@ -1640,6 +1648,15 @@ function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null
   const emailVal = get(["email", "Email", "student_email", "email_address"], "—");
   const hasEmail = emailVal && emailVal !== "—";
 
+  // compute a readable violation value (prefer resolved label when available)
+  const rawViolation = (student && (student.violation ?? student.violation_description ?? student.violation_description)) || "";
+  const resolvedViolation = rawViolation
+    ? (typeof resolveViolationLabel === "function" ? resolveViolationLabel(rawViolation) : String(rawViolation))
+    : null;
+
+  // fallback final display value:
+  const violationDisplay = (resolvedViolation && String(resolvedViolation).trim() !== "") ? resolvedViolation : get(["violation"], "—");
+
   return (
     <div style={containerStyle} aria-label="Student profile">
       <div style={headerStyle}>
@@ -1687,7 +1704,7 @@ function StudentProfileModal({ student = {}, onClose = () => {}, onNotify = null
 
         <div style={fieldStyle}>
           <div style={labelStyle}>Violation</div>
-          <div style={valueStyle}>{get(["violation"], "—")}</div>
+          <div style={valueStyle}>{violationDisplay}</div>
         </div>
 
         <div style={fieldStyle}>
@@ -1760,6 +1777,19 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
   const [statusMessage, setStatusMessage] = useState(null); // { type: "error"|"success", text: "" }
 
   useEffect(() => setLocal({ ...initial }), [initial]);
+
+  // Ensure the local editor state normalizes some fields (violation/sanction -> string)
+  useEffect(() => {
+    if (!initial) {
+      setLocal({});
+      return;
+    }
+    const normalized = { ...initial };
+    if (normalized.violation !== undefined && normalized.violation !== null) normalized.violation = String(normalized.violation);
+    if (normalized.sanction !== undefined && normalized.sanction !== null) normalized.sanction = String(normalized.sanction);
+    // keep id fields intact (we need them to update)
+    setLocal(normalized);
+  }, [initial]);
 
   const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const [departments, setDepartments] = useState([]);
@@ -1844,10 +1874,23 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
       setStatusMessage({ type: "error", text: "Please select or enter a Violation." });
       return;
     }
-    // normalize id field: backend may expect `id` or `incident_id`
-    const payload = { ...
 
-local, id: undefined, incident_id: undefined };
+    // Build payload that includes the incident identifier so backend can update the correct record.
+    // Backend commonly expects `id`, but if your API expects `incident_id` change accordingly.
+    const incidentId = local.id ?? local.incident_id ?? local.incidentId ?? null;
+
+    // copy local state into payload but ensure id is present and we don't leave UI-only helpers
+    const payload = { ...local };
+
+    if (incidentId) {
+      // prefer `id` as canonical update key; keep other id fields removed to avoid confusion
+      payload.id = incidentId;
+    }
+
+    // remove accidental UI-only fields if present
+    delete payload.incidentId;
+    delete payload._temp;
+    // keep `violation` exactly as selected (string id or label depending on Violation.php option value)
 
     setSaving(true);
     setStatusMessage(null);
@@ -2126,7 +2169,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
   const [sanctionLoading, setSanctionLoading] = useState(false);
 
   // ---- new screenshot state & helpers ----
-  // screenshotPreview stores a data URL (or null); steps.step1.screenshot will also contain the dataURL
+  // screenshotPreview stores a data URL (or null); steps.step1.screenshots will also contain the dataURL
   const [screenshotPreview, setScreenshotPreview] = useState((steps.step1?.screenshots && Array.isArray(steps.step1.screenshots)) ? steps.step1.screenshots.map(s => ({ url: s.screenshot || s, name: s.screenshotName })) : []);
 
   // keep preview in sync when steps are loaded/changed externally
@@ -2412,7 +2455,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                 />
 
                 {screenshotPreview ? (
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", width: "100%" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", width: "100%" }}>
                     <img
                       src={screenshotPreview}
                       alt="preview"
@@ -2458,7 +2501,7 @@ function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async (
                   </div>
                 ) : (
                   <div style={{ flex: 1, textAlign: "center", color: "#6b7280" }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Upload Documents</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Upload Evidence or Proof</div>
                     <div style={{ fontSize: 13 }}>Drag and drop files here</div>
                     <div style={{ fontSize: 12, marginTop: 6 }}>or click to browse (images only, max 50MB)</div>
                   </div>
@@ -2683,7 +2726,7 @@ function MajorOffenseFormModal({ record = {}, student = {}, onClose = () => {}, 
 
             <div style={{ minWidth: 220, flex: "1 1 220px" }}>
               <div style={{ fontWeight: 700 }}>{s1.screenshotName ?? (typeof s1.screenshot === "string" ? s1.screenshot.split("/").pop() : "Attached file")}</div>
-              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6, wordBreak: "break-all" }}>
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4, wordBreak: "break-all" }}>
                 {typeof s1.screenshot === "string" ? s1.screenshot : "Embedded data URL"}
               </div>
 
