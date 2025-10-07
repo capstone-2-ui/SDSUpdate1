@@ -14,7 +14,7 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    fetch("http://192.168.100.88/SDSUpdate1-main/backend/login.php", {
+    fetch("http://192.168.0.134/SDSUpdate1-main/backend/login.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -71,7 +71,7 @@ export default function Login({ onLogin }) {
 
             {/* Added subtitle - smaller and not bold */}
             <div className="login-subtitle">
-              Enhancing Transparency and Accountability in Student Violations
+              
             </div>
           </div>
         </div>

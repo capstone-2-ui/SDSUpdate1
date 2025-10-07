@@ -24,7 +24,7 @@ export default function SanctionPage({ user }) {
   const filterRef = useRef(null);
   const fileInputRef = useRef(null);
   const timeoutRef = useRef(null);
-  const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Sanction.php"; // <-- adjust if needed
+  const API_URL = "http://192.168.0.134/SDSUpdate1-main/backend/Sanction.php"; // <-- adjust if needed
 
   // Confirmation (top-right green toast)
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
