@@ -14,7 +14,7 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    fetch("http://192.168.0.134/SDSUpdate1-main/backend/login.php", {
+    fetch("http://192.168.2.110/SDSUpdate1-main/backend/login.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -72,7 +72,10 @@ export default function Login({ onLogin }) {
             {/* Added subtitle - smaller and not bold */}
             <div className="login-subtitle">
               
-            </div>
+              <div className="subtitle-line">Automating Violation Escalation and</div>
+              <div className="subtitle-line">Role-Based Case Analytics</div>
+              
+           </div>
           </div>
         </div>
         <div className="login-right">

@@ -56,7 +56,7 @@ function App() {
 
     // Otherwise, attempt to restore a server session (best-effort).
     setLoading(true);
-    fetch("http://192.168.0.134/SDSUpdate1-main/backend/login.php", {
+    fetch("http://192.168.2.110/SDSUpdate1-main/backend/login.php", {
       method: "GET",
       credentials: "include",
     })
@@ -127,7 +127,7 @@ function App() {
     setUser(null);
 
     // OPTIONAL: tell backend to destroy server session if endpoint exists.
-    fetch("http://192.168.0.134/SDSUpdate1-main/backend/logout.php", {
+    fetch("http://192.168.2.110/SDSUpdate1-main/backend/logout.php", {
       method: "POST",
       credentials: "include",
     }).catch(() => {
