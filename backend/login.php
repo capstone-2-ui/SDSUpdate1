@@ -4,7 +4,7 @@ session_start();
 // --- CORS setup (support localhost and LAN IP) ---
 $allowed_origins = [
     "http://localhost:3000",
-    "http://192.168.0.111:3000"
+    "http://192.168.2.110:3000"
 ];
 
 if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins)) {

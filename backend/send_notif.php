@@ -56,7 +56,7 @@ require_once __DIR__ . '/PHPMailer/PHPMailer.php';
 require_once __DIR__ . '/PHPMailer/SMTP.php';
 
 // ========== DB CONNECTION ==========
-$servername = "localhost";   // change if DB is remote (e.g. 192.168.0.111)
+$servername = "localhost";   // change if DB is remote (e.g. 192.168.2.110)
 $username   = "root";
 $password   = "";
 $dbname     = "incident_db";
