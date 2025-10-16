@@ -28,7 +28,7 @@ export default function SectionPage({ user }) {
   const [uploadProgress, setUploadProgress] = useState({ total: 0, success: 0, failed: 0 });
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  const API_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Section.php"; // adjust path
+  const API_URL = "http://192.168.0.111/SDSUpdate1-main/backend/Section.php"; // adjust path
 
   // Confirmation (top-right green toast)
   const [confirmation, setConfirmation] = useState({ visible: false, message: "" });
