@@ -5,7 +5,7 @@
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $allowed_origins = [
     "http://localhost:3000",
-    "http://192.168.2.110:3000"
+    "http://192.168.100.88:3000"
 ];
 
 if (in_array($origin, $allowed_origins)) {
@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ✅ Database connection
-$host = "localhost";   // change to "192.168.2.110" if DB runs on that machine
+$host = "localhost";   // change to "192.168.100.88" if DB runs on that machine
 $user = "root";        // change if needed
 $pass = "";            // change if needed
 $db   = "student_db";  // change to your DB name

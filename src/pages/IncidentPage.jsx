@@ -14,8 +14,8 @@ import "./IncidentPage.css";
 */
 
 function IncidentPage({ user }) {
-  const API_BASE = "http://192.168.2.110/SDSUpdate1-main/backend/Incident.php";
-  const BACKEND_BASE = "http://192.168.2.110/SDSUpdate1-main/backend";
+  const API_BASE = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const STORAGE_KEY = "SDS:selectedStudent";
 
   const location = useLocation();
@@ -1497,7 +1497,7 @@ function FilterPopover({ onApply, onClose, initialFilters }) {
 
   const [violationOptions, setViolationOptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const BACKEND_BASE = "http://192.168.2.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
 
   useEffect(() => {
     setViolation(initialFilters.violation);
@@ -1791,7 +1791,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
     setLocal(normalized);
   }, [initial]);
 
-  const BACKEND_BASE = "http://192.168.2.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const [departments, setDepartments] = useState([]);
   const [grades, setGrades] = useState([]);
   const [strands, setStrands] = useState([]);
@@ -2147,7 +2147,7 @@ function EditIncidentForm({ initial = {}, onSave = async () => ({}), onCancel = 
    MajorOffenseModal (enhanced: local step state and Next/Back navigation)
    ------------------------- */
 function MajorOffenseModal({ step = 1, student, savedData = {}, onSave = async () => ({}), onClose = () => {} }) {
-  const BACKEND_BASE = "http://192.168.2.110/SDSUpdate1-main/backend";
+  const BACKEND_BASE = "http://192.168.100.88/SDSUpdate1-main/backend";
   const [currentStep, setCurrentStep] = useState(step || 1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

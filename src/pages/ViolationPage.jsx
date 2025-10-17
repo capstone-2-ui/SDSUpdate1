@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import "./ViolationPage.css";
 import { FaEdit, FaTrash, FaUserCircle } from "react-icons/fa";
 
-const API_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Violation.php"; // change path if needed
+const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Violation.php"; // change path if needed
 
 export default function ViolationPage({ user }) {
   const [violations, setViolations] = useState([]);

@@ -2,12 +2,12 @@ import React, { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "./StudentIncidentPage.css";
 
-const API_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Student.php"; 
-const GRADE_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Grade.php";
-const SECTION_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Section.php";
-const STRAND_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Strand.php";
-const DEPARTMENT_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Department.php";
-const INCIDENT_URL = "http://192.168.2.110/SDSUpdate1-main/backend/Incident.php"; // <- new
+const API_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Student.php"; 
+const GRADE_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Grade.php";
+const SECTION_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Section.php";
+const STRAND_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Strand.php";
+const DEPARTMENT_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Department.php";
+const INCIDENT_URL = "http://192.168.100.88/SDSUpdate1-main/backend/Incident.php"; // <- new
 
 export default function StudentIncidentPage({ user }) {
   const [students, setStudents] = useState([]); 
